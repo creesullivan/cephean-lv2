@@ -1,0 +1,42 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/respectrum>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-respectrum.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-respectrum.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-respectrum.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-respectrum.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "RESPECTRUM" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "gateLow" ;
+            lv2:name "Gate Lo" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "gateHigh" ;
+            lv2:name "Gate Hi" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "timbre" ;
+            lv2:name "Timbre" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "attack" ;
+            lv2:name "Attack" ;
+        ] , [
+            lv2:index 4 ;
+            lv2:symbol "time" ;
+            lv2:name "Time" ;
+        ] , [
+            lv2:index 5 ;
+            lv2:symbol "level" ;
+            lv2:name "Level" ;
+        ] ;
+    ] .

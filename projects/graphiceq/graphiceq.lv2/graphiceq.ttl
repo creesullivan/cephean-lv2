@@ -1,0 +1,55 @@
+@prefix doap:  <http://usefulinc.com/ns/doap#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix lv2:   <http://lv2plug.in/ns/lv2core#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix units: <http://lv2plug.in/ns/extensions/units#> .
+
+<https://github.com/creesullivan/cephean/graphiceq>
+	a lv2:Plugin , lv2:ReverbPlugin ;
+	
+	lv2:extensionData <http://lv2plug.in/ns/ext/state#interface> ;
+
+    lv2:optionalFeature <http://lv2plug.in/ns/lv2core#hardRTCapable> ,
+                        <http://lv2plug.in/ns/ext/buf-size#boundedBlockLength> ;
+
+    lv2:requiredFeature <http://lv2plug.in/ns/ext/options#options> ,
+                        <http://lv2plug.in/ns/ext/urid#map> ;
+	
+	doap:name "Cephean Template";
+	doap:license "ISC";
+	doap:maintainer [
+        foaf:name "cephean" ;
+    ] ;
+	
+	rdfs:comment """
+Cephean simple template plugin
+""" ;
+	
+	lv2:minorVersion 1 ;
+	lv2:microVersion 0 ;
+	
+	lv2:port [
+		a lv2:InputPort , lv2:ControlPort ;
+		lv2:index 0 ;
+		lv2:symbol "level" ;
+		lv2:name "Level" ;
+		lv2:default 50.0 ;
+		lv2:minimum 0.0 ;
+		lv2:maximum 100.0 ;
+		units:unit units:pc
+	] ;
+	
+	lv2:port [
+		a lv2:InputPort , lv2:AudioPort ;
+		lv2:index 1 ;
+		lv2:symbol "in" ;
+		lv2:name "In"
+	] ;
+	
+	lv2:port [
+		a lv2:OutputPort , lv2:AudioPort ;
+		lv2:index 2 ;
+		lv2:symbol "out" ;
+		lv2:name "Out"
+	] .

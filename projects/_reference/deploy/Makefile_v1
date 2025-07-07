@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+# Makefile for eg-amp.lv2 #
+# ----------------------- #
+# Created by falkTX
+#
+
+include Makefile.mk
+
+CEPHEAN_SHARED_INC = ../shared
+
+# --------------------------------------------------------------
+# Default target is to build all plugins
+
+all: build
+build: gain
+
+# --------------------------------------------------------------
+# gain build rules
+
+GAIN_SOURCES = gain_dsp.cpp gain.cpp ../shared/core/cephean-lv2.cpp
+
+gain: gain.lv2/gain.so
+
+gain.lv2/gain.so: gain_dsp.cpp
+	$(CXX) $^ $(BUILD_CXX_FLAGS) $(LINK_FLAGS) -I$(CEPHEAN_SHARED_INC) -lm $(SHARED) -o $@ $(GAIN_SOURCES)
+
+# --------------------------------------------------------------
+
+clean:
+	rm -f gain.lv2/gain.so

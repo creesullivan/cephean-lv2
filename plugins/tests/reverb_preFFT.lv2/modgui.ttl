@@ -1,0 +1,34 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/reverb>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-reverb.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-reverb.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-reverb.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-reverb.png> ;
+        modgui:brand "CEPHEAN" ;
+        modgui:label "Reverb" ;
+        modgui:model "boxy" ;
+        modgui:panel "5-knobs" ;
+        modgui:color "dots" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "duration" ;
+            lv2:name "Tail" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "color" ;
+            lv2:name "Color" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "wet" ;
+            lv2:name "Wet" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "dry" ;
+            lv2:name "Dry" ;
+        ] ;
+    ] .

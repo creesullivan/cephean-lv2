@@ -1,0 +1,10 @@
+@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<http://example.com/plugins/Amp>
+    a lv2:Plugin ;
+    lv2:binary <DPF-Amp_dsp.so> ;
+    rdfs:seeAlso <DPF-Amp_dsp.ttl> .
+
+
+<http://example.com/plugins/Amp> rdfs:seeAlso <modgui.ttl> .

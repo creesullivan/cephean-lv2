@@ -1,0 +1,34 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/tremvibe>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-tremvibe.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-tremvibe.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-tremvibe.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-tremvibe.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "TremVibe" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "tremelo" ;
+            lv2:name "Trem" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "vibrato" ;
+            lv2:name "Vibe" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "rate" ;
+            lv2:name "Rate" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "random" ;
+            lv2:name "Rand" ;
+        ] ;
+    ] .
