@@ -17,6 +17,8 @@ namespace cephean
 //fixed or time varying slewed filters.
 class fof : public monoalg, public stereoalg, public multialg
 {
+	template<unsigned int N> friend class lrcascade;
+
 public:
 	struct coefs
 	{
@@ -27,6 +29,8 @@ public:
 
 	fof(int slew = 1, int maxNch = 1, bool blockTransposed = false);
 	~fof();
+
+	void reallocate(int slew = 1, int maxNch = 1, bool blockTransposed = false);
 
 	void setCoefs(coefs newCoefs, bool converge = false);
 	coefs getCoefs() const;
@@ -61,6 +65,14 @@ fof::coefs invert(const fof::coefs& coef);
 
 //Returns the filter inverse of a stable minimum phase coefs structure
 fof::coefs inverse(const fof::coefs& coef);
+
+//Returns an allpass filter that phase matches a double application of
+// //the provided filter with one stage's numerator coefficients flipped
+fof::coefs matchphase(const fof::coefs& coef);
+
+//Flips the numerator coefficients of the provided filter, switching
+//min phase <-> max phase, usually for phase aligned double filtering
+fof::coefs mp2mp(const fof::coefs& coef);
 
 //====================================================
 
@@ -123,6 +135,7 @@ fof::coefs smooth1(float N);
 class sof : public monoalg, public stereoalg, public multialg
 {
 	template<unsigned int N> friend class sofcasc;
+	template<unsigned int N> friend class lrcascade;
 
 public:
 	struct coefs
@@ -253,11 +266,25 @@ namespace filt
 
 	//====================================================
 
-	//TODO -- SHELVES
+	//Second order low shelf filter with crossover frequency f, quality factor
+	//Q, and low frequency linear gain g
+	sof::coefs lowshelf2(float f, float Q, float g);
+
+	//TODO -- COMPENSATED LOWSHELF
+
+	//Second order high shelf filter with crossover frequency f, quality factor
+	//Q, and high frequency linear gain g
+	sof::coefs highshelf2(float f, float Q, float g);
+
+	//TODO -- COMPENSATED HIGHSHELF
 
 	//====================================================
 
-	//TODO -- BOOST/CUT
+	//Second order boost/cut peaking filter with center frequency f, quality
+	//factor Q, and linear peak gain g
+	sof::coefs peaking2(float f, float Q, float g);
+
+	//TODO -- COMPENSATED... PEAKING...?
 
 	//====================================================
 
@@ -563,6 +590,229 @@ const sofcasc<4>::coefs& antialias8(sofcasc<4>::coefs& coef, int DSR);
 
 }
 
+//==================================================
 
+//Linkwitz-Riley cascade filterbank providing perfect equalization
+//via analysis/synthesis processing that splits a signal into several
+//frequency bands, then recombines them again with no phase issues
+template<unsigned int N> class lrcascade
+{
+public:
+	lrcascade(int slew = 1, bool blockTransposed = false)
+	{
+		reallocate(slew, blockTransposed);
+	}
+	~lrcascade() {}
+
+	void reallocate(int slew = 1, bool blockTransposed = false)
+	{
+		transposed = blockTransposed;
+		for (int m = 0; m < N-1; ++m) {
+			lpf[m].reallocate(slew, 1, false);
+			clpf[m] = lpf[m].sc.get();
+
+			hpf[m].reallocate(slew, 1, false);
+			chpf[m] = hpf[m].sc.get();
+
+			apf[m].reallocate(slew, 1, false);
+			capf[m] = apf[m].sc.get();
+		}
+	}
+
+	//Updates the normalized crossover frequencies, for an N-band bank,
+	//there should be N-1 crossover frequencies
+	void setCrossoverFrequencies(const float* f, bool converge = false)
+	{
+		for (int m = 0; m < N-1; ++m) {
+			lpf[m].setCoefs(filt::lowpass2(f[m], 0.5f), converge);
+			hpf[m].setCoefs(filt::invert(filt::highpass2(f[m], 0.5f)), converge);
+			apf[m].setCoefs(filt::allpass1(f[m]), converge);
+		}
+	}
+
+	sof::coefs getLPFCoefs(int n) const
+	{
+		return lpf[n].getCoefs();
+	}
+	sof::coefs getHPFCoefs(int n) const
+	{
+		return hpf[n].getCoefs();
+	}
+	sof::coefs getAPFCoefs(int n) const
+	{
+		return apf[n].getCoefs();
+	}
+
+	void clear()
+	{
+		for (int m = 0; m < N-1; ++m) {
+			lpf[m].clear();
+			hpf[m].clear(); //memory actually unused
+			apf[m].clear();
+		}
+	}
+
+	void analyze(float x, float* X)
+	{
+		double xtemp[N-1];
+		double ztemp = 0.0;
+		double ytemp = x;
+		for (int m = 0; m < N-1; ++m) {
+			lpf[m].sc.slew(); //slew analysis filters first
+			hpf[m].sc.slew();
+		}
+		for (int m = 0; m < N-1; ++m) {
+			xtemp[m] = ytemp + clpf[m][0] * lpf[m].mem1L + clpf[m][1] * lpf[m].mem2L; //shared denom & memory
+			ztemp = clpf[m][2] * xtemp[m] + clpf[m][3] * lpf[m].mem1L + clpf[m][4] * lpf[m].mem2L; //LPF
+			ytemp = chpf[m][2] * xtemp[m] + chpf[m][3] * lpf[m].mem1L + chpf[m][4] * lpf[m].mem2L; //HPF
+			X[m] = (float)ztemp; //lowpass output
+		}
+		X[N-1] = (float)ytemp; //final highpass output
+		for (int m = 0; m < N-1; ++m) { //only use LPF memory for efficiency
+			lpf[m].mem2L = lpf[m].mem1L;
+			lpf[m].mem1L = xtemp[m];
+		}
+	}
+	void analyzeBlock(const float* x, float* const* X, int len)
+	{
+		bool slewing = lpf[0].sc.check(); //all filter slews are coupled
+		if (slewing) { //slew every sample
+			if (transposed) {
+				for (int i = 0; i < len; ++i) {
+					analyze(x[i], X[i]);
+				}
+			}
+			else {
+				for (int i = 0; i < len; ++i) {
+					analyze(x[i], scr);
+					for (int n = 0; n < N; ++n) {
+						X[n][i] = scr[n];
+					}
+				}
+			}
+		}
+		else { //faster block-based application
+			double xtemp[N-1];
+			double ztemp = 0.0;
+			double ytemp = 0.0;
+			if (transposed) {
+				for (int i = 0; i < len; ++i) {
+					ytemp = (double)x[i];
+					for (int m = 0; m < N-1; ++m) {
+						xtemp[m] = ytemp + clpf[m][0] * lpf[m].mem1L + clpf[m][1] * lpf[m].mem2L; //shared denom & memory
+						ztemp = clpf[m][2] * xtemp[m] + clpf[m][3] * lpf[m].mem1L + clpf[m][4] * lpf[m].mem2L; //LPF
+						ytemp = chpf[m][2] * xtemp[m] + chpf[m][3] * lpf[m].mem1L + chpf[m][4] * lpf[m].mem2L; //HPF
+						X[i][m] = (float)ztemp; //lowpass output
+					}
+					X[i][N - 1] = (float)ytemp; //final highpass output
+					for (int m = 0; m < N-1; ++m) { //only use LPF memory for efficiency
+						lpf[m].mem2L = lpf[m].mem1L;
+						lpf[m].mem1L = xtemp[m];
+					}
+				}
+			}
+			else {
+				for (int i = 0; i < len; ++i) {
+					ytemp = (double)x[i];
+					for (int m = 0; m < N-1; ++m) {
+						xtemp[m] = ytemp + clpf[m][0] * lpf[m].mem1L + clpf[m][1] * lpf[m].mem2L; //shared denom & memory
+						ztemp = clpf[m][2] * xtemp[m] + clpf[m][3] * lpf[m].mem1L + clpf[m][4] * lpf[m].mem2L; //LPF
+						ytemp = chpf[m][2] * xtemp[m] + chpf[m][3] * lpf[m].mem1L + chpf[m][4] * lpf[m].mem2L; //HPF
+						X[m][i] = (float)ztemp; //lowpass output
+					}
+					X[N - 1][i] = (float)ytemp; //final highpass output
+					for (int m = 0; m < N-1; ++m) { //only use LPF memory for efficiency
+						lpf[m].mem2L = lpf[m].mem1L;
+						lpf[m].mem1L = xtemp[m];
+					}
+				}
+			}
+		}
+	}
+
+	float synthesize(const float* Y)
+	{
+		double xtemp[N-1];
+		double ytemp = (double)Y[0];
+		for (int m = 0; m < N-1; ++m) {
+			apf[m].sc.slew(); //slew synthesis filters first
+		}
+		for (int m = 1; m < N-1; ++m) {
+			xtemp[m] = ytemp + capf[m][0] * apf[m].memL;
+			ytemp = capf[m][1] * xtemp[m] + capf[m][2] * apf[m].memL;
+			ytemp += Y[m]; //accumulate with phase
+		}
+		ytemp += Y[N - 1]; //last highpassed output is already phase aligned
+		for (int m = 0; m < N-1; ++m) {
+			apf[m].memL = xtemp[m];
+		}
+		return (float)ytemp;
+	}
+	void synthesizeBlock(const float*const* Y, float* y, int len)
+	{
+		bool slewing = apf[0].sc.check(); //all filter slews are coupled
+		if (slewing) { //slew every sample
+			if (transposed) {
+				for (int i = 0; i < len; ++i) {
+					y[i] = synthesize(Y[i]);
+				}
+			}
+			else {
+				for (int i = 0; i < len; ++i) {
+					for (int n = 0; n < N; ++n) {
+						scr[n] = Y[i][n];
+					}
+					y[i] = synthesize(scr);
+				}
+			}
+		}
+		else { //faster block-based application
+			double xtemp[N-1];
+			double ytemp = 0.0;
+			if (transposed) {
+				for (int i = 0; i < len; ++i) {
+					ytemp = (double)Y[i][0];
+					for (int m = 1; m < N-1; ++m) {
+						xtemp[m] = ytemp + capf[m][0] * apf[m].memL;
+						ytemp = capf[m][1] * xtemp[m] + capf[m][2] * apf[m].memL;
+						ytemp += Y[i][m]; //accumulate with phase
+					}
+					ytemp += Y[i][N - 1]; //last highpassed output is already phase aligned
+					for (int m = 0; m < N-1; ++m) {
+						apf[m].memL = xtemp[m];
+					}
+					y[i] = (float)ytemp;
+				}
+			}
+			else {
+				for (int i = 0; i < len; ++i) {
+					ytemp = (double)Y[0][i];
+					for (int m = 1; m < N-1; ++m) {
+						xtemp[m] = ytemp + capf[m][0] * apf[m].memL;
+						ytemp = capf[m][1] * xtemp[m] + capf[m][2] * apf[m].memL;
+						ytemp += Y[m][i]; //accumulate with phase
+					}
+					ytemp += Y[N - 1][i]; //last highpassed output is already phase aligned
+						for (int m = 0; m < N-1; ++m) {
+							apf[m].memL = xtemp[m];
+						}
+					y[i] = (float)ytemp;
+				}
+			}
+		}
+	}
+
+private:
+	sof lpf[N - 1]; //list of LPF stages
+	sof hpf[N - 1]; //list of HPF stages
+	fof apf[N - 1]; //list of APF stages
+
+	const double* clpf[N - 1]; //preallocated list of pointers to slewed LPF coefs
+	const double* chpf[N - 1]; //preallocated list of pointers to slewed HPF coefs
+	const double* capf[N - 1]; //preallocated list of pointers to slewed APF coefs
+
+	bool transposed = false;
+	float scr[N]; //multiband transposition scratch
+};
 
 }

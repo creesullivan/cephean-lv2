@@ -309,6 +309,18 @@ void impz(const sof::coefs& c, float* h, int len, int shift)
 	}
 }
 
+void freqz(sof::coefs c, const float* f, complex<float>* H, int K)
+{
+	complex<double> E;
+	complex<double> EE;
+	for (int k = 0; k < K; ++k) {
+		E = expi(-constants.pi * f[k]);
+		EE = E * E;
+		H[k] = (c.b0 + c.b1 * E + c.b2 * EE);
+		H[k] /= (1.0 - c.na1 * E - c.na2 * EE);
+	}
+}
+
 
 //=====================================================
 

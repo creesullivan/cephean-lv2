@@ -19,6 +19,14 @@ fof::fof(int slew, int maxNch, bool blockTransposed) :
 }
 fof::~fof() {}
 
+void fof::reallocate(int slew, int maxNch, bool blockTransposed)
+{
+	multialg::reallocate(maxNch, blockTransposed);
+	sc.setSlew(slew);
+	vmem.reset(maxNch);
+	clear();
+}
+
 void fof::setCoefs(coefs newCoefs, bool converge)
 {
 	double* pc = sc.target();
@@ -163,6 +171,20 @@ fof::coefs invert(const fof::coefs& coef)
 fof::coefs inverse(const fof::coefs& coef)
 {
 	return { -coef.b1 / coef.b0, 1.0 / coef.b0, -coef.na1 / coef.b0 };
+}
+
+//Returns an allpass filter that phase matches a double application of
+//the provided filter with one stage's numerator coefficients flipped
+fof::coefs matchphase(const fof::coefs& coef)
+{
+	return { coef.na1, -coef.na1, 1.0 };
+}
+
+//Flips the numerator coefficients of the provided filter, switching
+//min phase <-> max phase, usually for phase aligned double filtering
+fof::coefs mp2mp(const fof::coefs& coef)
+{
+	return { coef.na1, coef.b1, coef.b0 };
 }
 
 //====================================================
@@ -897,11 +919,75 @@ sof::coefs resonator2(float f, float r)
 
 //====================================================
 
-//TODO -- SHELVES
+//Second order low shelf filter with crossover frequency f, quality factor
+//Q, and low frequency linear gain g
+sof::coefs lowshelf2(float f, float Q, float g)
+{
+	sof::coefs coef;
+
+	double wC = (double)cosf(constants.pi * f);
+	double alpha = (double)(sinf(constants.pi * f) / (2.0f * Q));
+	double A = (double)sqrtf(g);
+	double As = sqrt(A);
+	double a0 = (A + 1.0) + (A - 1.0) * wC + 2 * As * alpha;
+
+	coef.b0 = A * ((A + 1.0) - (A - 1.0) * wC + 2.0 * As * alpha) / a0;
+	coef.b1 = A * (2.0 * ((A - 1.0) - (A + 1.0) * wC)) / a0;
+	coef.b2 = A * ((A + 1.0) - (A - 1.0) * wC - 2.0 * As * alpha) / a0;
+	coef.na1 = (2.0 * ((A - 1.0) + (A + 1.0) * wC)) / a0;
+	coef.na2 = -((A + 1.0) + (A - 1.0) * wC - 2.0 * As * alpha) / a0;
+
+	return coef;
+}
+
+//TODO -- COMPENSATED LOWSHELF
+
+//Second order high shelf filter with crossover frequency f, quality factor
+//Q, and high frequency linear gain g
+sof::coefs highshelf2(float f, float Q, float g)
+{
+	sof::coefs coef;
+
+	double wC = (double)cosf(constants.pi * f);
+	double alpha = (double)(sinf(constants.pi * f) / (2.0f * Q));
+	double A = (double)sqrtf(g);
+	double As = sqrt(A);
+	double a0 = (A + 1.0) - (A - 1.0) * wC + 2 * As * alpha;
+
+	coef.b0 = A * ((A + 1.0) + (A - 1.0) * wC + 2.0 * As * alpha) / a0;
+	coef.b1 = A * (-2.0 * ((A - 1.0) + (A + 1.0) * wC)) / a0;
+	coef.b2 = A * ((A + 1.0) + (A - 1.0) * wC - 2.0 * As * alpha) / a0;
+	coef.na1 = (-2.0 * ((A - 1.0) - (A + 1.0) * wC)) / a0;
+	coef.na2 = -((A + 1.0) - (A - 1.0) * wC - 2.0 * As * alpha) / a0;
+
+	return coef;
+}
+
+//TODO -- COMPENSATED HIGHSHELF
 
 //====================================================
 
-//TODO -- BOOST/CUT
+//Second order boost/cut peaking filter with center frequency f, quality
+//factor Q, and linear peak gain g
+sof::coefs peaking2(float f, float Q, float g)
+{
+	sof::coefs coef;
+
+	double wC = (double)cosf(constants.pi * f);
+	double alpha = (double)(sinf(constants.pi * f) / (2.0f * Q));
+	double A = (double)sqrtf(g);
+	double a0 = 1.0 + alpha / A;
+
+	coef.b0 = (1.0 + alpha * A) / a0;
+	coef.b1 = -2.0 * wC / a0;
+	coef.b2 = (1.0 - alpha * A) / a0;
+	coef.na1 = -coef.b1;
+	coef.na2 = -(1.0 - alpha / A) / a0;
+
+	return coef;
+}
+
+//TODO -- COMPENSATED... PEAKING...?
 
 //====================================================
 

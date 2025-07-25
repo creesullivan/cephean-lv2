@@ -131,21 +131,41 @@ public:
 			}
 		}
 	}
-	mat(const ptype* data, int len1, int len2) : mat(len1, len2)
+	mat(const ptype* data, int len1, int len2, bool transpose=false) :
+		mat(transpose ? len2 : len1, transpose ? len1 : len2)
 	{
-		for (int l = 0; i < L; ++l) {
-			p[l] = data[l]; //deep copy
+		if (transpose) {
+			for (int i = 0; i < N; ++i) {
+				for (int j = 0; j < M; ++j) {
+					pmat[i][j] = data[N*j + i]; //deep transposed copy
+				}
+			}
 		}
-	}
-	mat(const ptype*const* data, int len1, int len2) : mat(len1, len2)
-	{
-		for (int i = 0; i < N; ++i) {
-			for (int j = 0; j < M; ++j) {
-				p[i][j] = data[i][j]; //deep copy
+		else {
+			for (int l = 0; l < L; ++l) {
+				p[l] = data[l]; //deep copy
 			}
 		}
 	}
-	mat(const mat& other) : mat(other.p, other.N, other.M) {}
+	mat(const ptype*const* data, int len1, int len2, bool transpose=false) :
+		mat(transpose ? len2 : len1, transpose ? len1 : len2)
+	{
+		if (transpose) {
+			for (int i = 0; i < N; ++i) {
+				for (int j = 0; j < M; ++j) {
+					pmat[i][j] = data[j][i]; //deep transposed copy
+				}
+			}
+		}
+		else {
+			for (int i = 0; i < N; ++i) {
+				for (int j = 0; j < M; ++j) {
+					pmat[i][j] = data[i][j]; //deep copy
+				}
+			}
+		}
+	}
+	mat(const mat& other, bool transpose=false) : mat(other.p, other.N, other.M, transpose) {}
 
 	virtual ~mat()
 	{
@@ -176,8 +196,8 @@ public:
 	void operator=(const mat& other)
 	{
 		reset(other.N, other.M);
-		for (int i = 0; i < L; ++i) {
-			p[i] = other.p[i]; //deep copy
+		for (int l = 0; l < L; ++l) {
+			p[l] = other.p[l]; //deep copy
 		}
 	}
 
@@ -869,7 +889,6 @@ template<class ptype> void vmultaccum(const ptype* x1, const ptype* x2, ptype* y
 	}
 }
 
-
 //==================================================
 
 void vmagdB(const float* x, float* y, int len);
@@ -880,6 +899,39 @@ void vexp(const float* x, float* y, int len);
 void vsqrt(const float* x, float* y, int len);
 
 void vexpi(const float* ph, complex<float>* y, int len);
+
+//==================================================
+
+//Linear SOE solver class: EQ*x = SOL
+class solver
+{
+public:
+	solver(int setN, double setTolerance = 0.0);
+	~solver();
+
+	//Returns x such that EQ*x = SOL using LU decomposition with pivoting
+	//performed immediately in full
+	bool solve(const float* const* EQ, const float* SOL, float* x);
+
+	//Prepares internal state to quickly solve problems of the form EQ*x = SOL
+	//with the resolve() function
+	bool prepare(const float* const* EQ);
+
+	//Returns x such that EQ*x = SOL using whatever the last set EQ was by
+	//either solve() or prepare()
+	void resolve(const float* SOL, float* x);
+
+	//Evaluates EQ*x = SOL, returning SOL to check correctness
+	void check(const float* const* EQ, const float* x, float* SOL) const;
+
+private:
+	const int N = 1;
+	const double tol = 0.0;
+	double** A = nullptr;
+	double* b = nullptr;
+	double* v = nullptr;
+	int* P = nullptr;
+};
 
 //==================================================
 

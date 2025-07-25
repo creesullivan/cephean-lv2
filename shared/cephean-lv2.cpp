@@ -240,6 +240,116 @@ void vexpi(const float* ph, complex<float>* y, int len)
 
 //==================================================
 
+solver::solver(int setN, double setTolerance) : N(setN), tol(setTolerance)
+{
+	//manually allocate these on the heap, because they behave
+	//weirdly inside the solver
+	A = new double* [N];
+	for (int n = 0; n < N; ++n) {
+		A[n] = new double[N];
+	}
+	b = new double[N];
+	v = new double[N];
+	P = new int[N];
+	
+}
+solver::~solver()
+{
+	//free memory manually
+	delete[] P;
+	delete[] v;
+	delete[] b;
+	for (int n = 0; n < N; ++n) {
+		delete[] A[n];
+	}
+	delete[] A;
+}
+
+bool solver::solve(const float* const* EQ, const float* SOL, float* x)
+{
+	bool ret = prepare(EQ);
+	if (ret) { //latch if equation is degenerate
+		resolve(SOL, x);
+	}
+	return ret;
+}
+
+//Prepares internal state to quickly solve problems of the form EQ*x = SOL
+//with the resolve() function
+bool solver::prepare(const float* const* EQ)
+{
+	for (int n = 0; n < N; ++n) {
+		P[n] = n; //init unit permutation matrix
+		vcopy(EQ[n], A[n], N); //copy to double precision scratch
+	}
+	for (int m = 0; m < N; ++m) {
+		double absA = 0.0;
+		double maxA = 0.0;
+		int mmax = m;
+
+		//find the best pivot for column m, simultaneously checking for degeneracy
+		for (int n = m; n < N; ++n) {
+			if ((absA = fabs(A[n][m])) > maxA) {
+				maxA = absA;
+				mmax = n;
+			}
+		}
+		if (maxA <= tol) {
+			return false; //degenerate matrix, failure
+		}
+		if (mmax != m) { //then we need to pivot
+			//pivoting P
+			int l = P[m];
+			P[m] = P[mmax];
+			P[mmax] = l;
+
+			//pivoting rows of A
+			double* ptr = A[m];
+			A[m] = A[mmax];
+			A[mmax] = ptr;
+		}
+
+		//form LU decomp
+		for (int n = m + 1; n < N; ++n) {
+			A[n][m] /= A[m][m];
+			for (int l = m + 1; l < N; ++l) {
+				A[n][l] -= A[n][m] * A[m][l];
+			}
+		}
+	}
+	return true; //success
+}
+
+//Returns x such that EQ*x = SOL using whatever the last set EQ was by
+//either solve() or prepare()
+void solver::resolve(const float* SOL, float* x)
+{
+	vcopy(SOL, b, N); //copy to double precision scratch
+	for (int n = 0; n < N; ++n) {
+		v[n] = b[P[n]];
+		for (int m = 0; m < n; ++m) {
+			v[n] -= A[n][m] * v[m];
+		}
+	}
+	for (int n = N - 1; n >= 0; --n) {
+		for (int m = n + 1; m < N; ++m) {
+			v[n] -= A[n][m] * v[m];
+		}
+		v[n] /= A[n][n];
+	}
+	vcopy(v, x, N); //copy out to float
+}
+
+//Evaluates EQ*x = SOL, returning SOL to check correctness
+void solver::check(const float* const* EQ, const float* x, float* SOL) const
+{
+	for (int n = 0; n < N; ++n) {
+		SOL[n] = vdot(EQ[n], x, N);
+	}
+}
+
+//==================================================
+
 rebuffer::rebuffer(int maxlen) : N(maxlen)
 {
 	reset();

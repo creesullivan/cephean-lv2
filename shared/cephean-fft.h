@@ -140,6 +140,21 @@ template<unsigned int N> void impz(const typename sofcasc<N>::coefs& c, float* h
 	}
 }
 
+void freqz(sof::coefs c, const float* f, complex<float>* H, int K);
+
+template<unsigned int N> void freqz(const typename lrcascade<N>& LRC, const float* f, complex<float>*const* H, int K)
+{
+	cfvec temp(K);
+	vset(temp.ptr(), 1.0f, K); //init to unity
+	for (int n = 0; n < (N - 1); ++n) {
+		freqz(LRC.getLPFCoefs(n), f, H[n], K);
+		vmult(H[n], temp.ptr(), H[n], K); //LPF path
+
+		freqz(LRC.getHPFCoefs(n), f, H[n + 1], K);
+		vmult(H[n + 1], temp.ptr(), temp.ptr(), K); //HPF path accumulation
+	}
+	vcopy(temp.ptr(), H[N - 1], K); //assign final HPF
+}
 
 //=====================================================
 
