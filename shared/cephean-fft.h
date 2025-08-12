@@ -142,6 +142,7 @@ template<unsigned int N> void impz(const typename sofcasc<N>::coefs& c, float* h
 
 void freqz(sof::coefs c, const float* f, complex<float>* H, int K);
 
+/* Causing errors when compiling on Mod Dwarf...? I don't need it for now
 template<unsigned int N> void freqz(const typename lrcascade<N>& LRC, const float* f, complex<float>*const* H, int K)
 {
 	cfvec temp(K);
@@ -155,6 +156,7 @@ template<unsigned int N> void freqz(const typename lrcascade<N>& LRC, const floa
 	}
 	vcopy(temp.ptr(), H[N - 1], K); //assign final HPF
 }
+*/
 
 //=====================================================
 

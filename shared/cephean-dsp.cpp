@@ -316,6 +316,10 @@ void flatbuffer::put(const float* x, int len)
 	}
 }
 
+float flatbuffer::get(int del, int hostlen, int hostn) const
+{
+	return *(p + (N - hostlen - del + hostn));
+}
 void flatbuffer::get(float* y, int len, int del) const
 {
 	vcopy(p + (N - len - del), y, len); //copy the data out
@@ -402,22 +406,61 @@ void circbuffer::set(const float* x, int len, int del)
 
 float circbuffer::get(int del, int hostlen, int hostn) const
 {
-	fastcircint pind = (ind - del);
-	pind -= (hostlen - 1 - hostn);
-	return p[pind];
+	fastcircint gind = (ind - del);
+	gind -= (hostlen - 1 - hostn);
+	return p[gind];
 }
 void circbuffer::get(float* y, int len, int del) const
 {
 	fastcircint gind = (ind - del);
 	gind -= (len - 1);
 
-	int remlen = N - 1 - gind.get();
+	int remlen = N - gind.get();
 	if (len > remlen) { //overruns the boundaries
 		vcopy(p + N - remlen, y, remlen);
 		vcopy(p, y + remlen, len - remlen);
 	}
 	else { //treat like a flat buffer
 		vcopy(p + gind.get(), y, len);
+	}
+}
+
+float circbuffer::getNN(float del, int hostlen, int hostn) const
+{
+	return get((int)ceilf(del), hostlen, hostn); //ceil for consistency w/ others
+}
+//interpolated from a starting delay, adjusting ddel samp/samp for pitch shifting
+void circbuffer::getNN(float* y, int len, float del0, float ddel, int hostlen, int hostn) const
+{
+	if (hostlen < 0) { //automatic rebuffering helpers
+		hostlen = len;
+	}
+
+	fastcircfloat gindf((float)ind.length(), (ind.get() - hostlen + 1 + hostn) - del0);
+
+	ddel = 1.0f - ddel; //convert to sample step
+	if (ddel >= 0.0f) { //then all steps still move forward in time
+		for (int n = 0; n < len; ++n) {
+			y[n] = p[(int)floorf(gindf)]; //floor for speed and safety
+			gindf += ddel;
+		}
+	}
+	else{ //then all steps move backward in time
+		ddel = -ddel;
+		for (int n = 0; n < len; ++n) {
+			y[n] = p[(int)floorf(gindf)];
+			gindf -= ddel;
+		}
+	}
+}
+void circbuffer::getNN(float* y, const float* del, int len) const
+{
+	fastcircint gind = ind;
+	int gind0 = ind.get() - len + 1;
+
+	for (int n = 0; n < len; ++n) { //no easy way to copy fast for arbitrary del vector
+		gind.set(gind0 + n - (int)ceilf(del[n])); //ceil for consistency w/ others
+		y[n] = p[gind];
 	}
 }
 
@@ -566,6 +609,64 @@ void vrel::step(const float* x, float* y, int chan)
 
 
 //==================================================
+
+lma::lma(int slew, double leakInSamples, int maxLengthInSamples, int maxBlockSize) :
+	L(leakInSamples), buff(maxLengthInSamples + maxBlockSize), N(slew, 1),
+	scr(maxBlockSize)
+{
+	alpha = exp(-1.0 / L);
+	setLength(1, true);
+	clear();
+}
+lma::~lma() {}
+
+void lma::setLength(int samples, bool converge)
+{
+	N.target(samples, converge);
+	if (converge) {
+		update();
+	}
+}
+
+void lma::clear()
+{
+	buff.clear();
+	mem = 0.0;
+}
+float lma::step(float x)
+{
+	if (N.slew()) {
+		update();
+	}
+	mem = alpha * mem + (double)x;	//apply fixed leak
+	buff.put((float)mem);			//delay output
+	mem -= betaN * buff.get(N);		//cancel tail
+	return (float)(gain * mem);		//makeup gain
+}
+void lma::stepBlock(const float* x, float* y, int len)
+{
+	if (N.check()) { //slew sample by sample
+		monoalg::stepBlock(x, y, len);
+	}
+	else { //run faster block-based algorithm
+		for (int i = 0; i < len; ++i) {
+			mem = alpha * mem + (double)x[i];
+			y[i] = (float)mem; //apply fixed leak
+		}
+		buff.put(y, len); //delay output
+		buff.get(scr, len, N);
+		for (int i = 0; i < len; ++i) { //cancel tail with makeup gain
+			y[i] = (float)(gain * (y[i] - betaN * scr[i]));
+		}
+	}
+}
+
+void lma::update()
+{
+	betaN = exp(-N / L);
+	gain = (1.0 - alpha) / (1.0 - betaN);
+}
+
 
 hold4::hold4(float clearval) : x0(clearval), n(1, 0)
 {
@@ -1457,6 +1558,350 @@ void diffuser::stepBlock(const float* x, float* y, int len)
 float diffuser::getNormGain() const
 {
 	return sqrtf(1.0f / (powf(tdecay, r) * g[seed] + drymix * drymix));
+}
+
+//==================================================
+
+corrbuffer::corrbuffer(int len, int chunk, int dsr, int maxbsize) :
+	Nu(len), Nd(len/dsr), Md(chunk/dsr), DSR(dsr), maxlen(maxbsize),
+	Rlen(Nd - Md + 1), K(getKForNpts(Nd)),
+	F(Nd), D(dsr),
+	T(constants.eps),
+	ave(1, (chunk/dsr)*100.0, chunk/dsr, maxbsize/dsr),
+	buffd(Nd), bpowd(Nd - Md + 1),
+	fscr1(K), fscr2(K), tscr(max(Nd, maxbsize))
+{
+	sofcasc<4>::coefs C; //design anti-aliasing filter
+	aa.setCoefs(filt::antialias8(C, dsr), true);
+	ave.setLength(Md, true);
+	clear(); //pre-clear buffer state
+}
+corrbuffer::~corrbuffer() {}
+
+int corrbuffer::size() const
+{
+	return Nu;
+}
+int corrbuffer::dsize() const
+{
+	return Nd;
+}
+int corrbuffer::Rsize() const
+{
+	return Rlen;
+}
+
+//Power threshold for division stability
+void corrbuffer::setThresh(float powerThreshold)
+{
+	T = powerThreshold;
+	clear();
+}
+
+//Correlation samples less than this are ignored by peak finding
+void corrbuffer::setMinPeriod(int samples)
+{
+	minperd = samples / DSR;
+}
+
+void corrbuffer::clear()
+{
+	buffd.clear();
+	bpowd.clear(T);
+	D.clear();
+	ave.clear();
+}
+
+void corrbuffer::put(const float* x, int len)
+{
+	aa.stepBlock(x, tscr, len);
+	len = D.stepBlock(tscr, tscr, len);
+	buffd.put(tscr, len); //put downsampled buffer
+
+	vmult(tscr.ptr(), tscr.ptr(), tscr.ptr(), len);
+	vmult(tscr.ptr(), (float)Md, tscr.ptr(), len); //convert ave -> sum
+	ave.stepBlock(tscr, tscr, len);
+	vmax(tscr.ptr(), T, tscr.ptr(), len); //guarantee norm stability
+	bpowd.put(tscr, len); //update chunk power sequence vector
+}
+
+//Computes the downsampled normalized autocorrelation sequence and copies to R
+void corrbuffer::corr(float* R)
+{
+	vrevcopy(buffd.get(Nd), tscr.ptr(), Nd); //instead of freq domain conj
+	F.rfwd(tscr, fscr1, Nd); //flipped full buffer
+	F.rfwd(buffd.get(Md), fscr2, Md); //front chunk
+
+	vmult(fscr1.ptr(), fscr2.ptr(), fscr1.ptr(), K); //perform autocorrelation
+	F.rinv(fscr1, tscr, Nd);
+
+	vrevcopy(bpowd.get(Rlen), R, Rlen); //normalize
+	vmult(R, R[0], R, Rlen);
+	vsqrt(R, R, Rlen);
+	vdiv(tscr.ptr() + (Md - 1), R, R, Rlen);
+}
+
+//Searches R over its valid range for the largest positive value
+float corrbuffer::corrpeak(const float* R, int& delay) const
+{
+	float Rpeak = vfindmax(R + minperd, Rlen - minperd, delay);
+	delay += minperd;
+	return Rpeak;
+}
+
+downshift::downshift(float sampleStep, int blendLength, const corrbuffer& Robj) :
+	Nu(Robj.Nu), DSR(Robj.DSR), maxlen(Robj.maxlen), Rlen(Robj.Rlen),
+	ddel(1.0f - sampleStep), blendlen(blendLength),
+	maxdeld(min((int)floorf((Nu - maxlen - blendLength * ddel) / DSR), Rlen - 1) - 1),
+	maxdel(maxdeld * DSR),
+	buff(Robj.Nu), blend(blendlen, false),
+	scr(maxlen)
+{
+	//design the post-filter
+	sofcasc<2>::coefs C;
+	lpf.setCoefs(filt::lowpass4(C, 0.9f * sampleStep, 0.707f), true);
+}
+downshift::~downshift() {}
+
+//Sets the absolute correlation threshold that flags a transient and snaps to front
+void downshift::setSnapThresh(float thresh)
+{
+	Tsnap = thresh;
+}
+//Sets the relative correlation threshold that flags a period to blend across
+void downshift::setBlendThresh(float thresh)
+{
+	Tblend = thresh;
+}
+
+void downshift::clear()
+{
+	buff.clear();
+	lpf.clear();
+	blend.converge();
+	del1 = 0.0f;
+	del2 = 0.0f;
+	intransient = false;
+}
+
+void downshift::stepBlock(const float* x, float* y, int len, const float* R, float Rmax, int Rmaxdel)
+{
+	//put new data to the buffer
+	buff.put(x, len);
+
+	int nbs = -1; //countdown to a new blend, -1 for none
+	float del1bs = 0.0f; //del1 assignment on new blend
+	float del2bs = 0.0f; //del2 assignment on new blend
+
+	if (!(blend.check())) { //if no active blend, check to see if we need to start one
+		if (Rmax < Tsnap) { //transient detected, flag
+			intransient = true;
+		}
+		if(intransient){
+			del1bs = 0.0f; //snap to front
+			del2bs = del1;
+			nbs = 0; //immediately
+			if (Rmax >= Tsnap) {
+				intransient = false; //clear after snap to a periodic region
+			}
+		}
+		else {
+			//search upcoming values for a valid period blend point
+			int curmindeld = (int)floorf(del1 / DSR);
+			int curmaxdeld = min((int)ceilf((del1 + (len - 1) * ddel) / DSR), maxdeld);
+			float curbestdeld = -1.0f; //-1 to indicate no period blend
+			for (int i = curmindeld; i < curmaxdeld; ++i) {
+				if (curbestdeld < 0.0f) { //no blend found yet
+					if (R[i] >= (Rmax * Tblend)) { //adequate blend correlation
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign
+						}
+					}
+				}
+			}
+			if (curbestdeld >= 0.0f) { //probably found a blend, try to snap
+				nbs = (int)ceilf((curbestdeld * DSR - del1) / ddel);
+				if (nbs < len) { //avoid small chance we picked something out of reach of this block
+					del2bs = del1 + nbs * ddel;
+					del1bs = del2bs - curbestdeld * DSR; //guaranteed small >= 0
+				}
+				else {
+					nbs = -1; //skip if we picked something that wouldn't start blending this block
+				}
+			}
+			if (nbs < 0) { //did not find a blend
+				nbs = (int)ceilf((maxdel - del1) / ddel); //samples remaining until we run out of buffer
+				if (nbs < len) { //if we will reach the end of the buffer this block
+					del2bs = del1 + nbs * ddel;
+					del1bs = del2bs - maxdel; //guaranteed small >= 0
+				}
+				else {
+					nbs = -1; //no danger of hitting the end of the buffer
+				}
+			}
+		}
+	}
+
+	if (blend.check()) { //if already blending, use two voices over the whole range and manage gains
+		buff.getNN(y, len, del1, ddel); //primary voice
+		buff.getNN(scr, len, del2, ddel); //secondary voice
+		del1 += (ddel * len);
+		del2 += (ddel * len);
+		for (int n = 0; n < len; ++n) { //apply blending gains, forming output
+			blend.fade();
+			y[n] *= blend.gain();
+			y[n] += scr[n] * (1.0f - blend.gain());
+		}
+	}
+	else {
+		if (nbs >= 0) { //if starting a new blend, split the block into one voice | two voices
+			buff.getNN(y, nbs, del1, ddel, len, 0); //one voice portion
+
+			blend.target(!(blend.current())); //kick off new blend
+			blend.swap();
+			del1 = del1bs;
+			del2 = del2bs;
+
+			buff.getNN(y + nbs, len - nbs, del1, ddel, len, nbs); //primary voice
+			buff.getNN(scr.ptr() + nbs, len - nbs, del2, ddel, len, nbs); //secondary voice
+			del1 += (ddel * (len - nbs));
+			del2 += (ddel * (len - nbs));
+			for (int n = nbs; n < len; ++n) { //apply blending gains, forming output
+				blend.fade();
+				y[n] *= blend.gain();
+				y[n] += scr[n] * (1.0f - blend.gain());
+			}
+		}
+		else { //no active or new blends, free run one voice
+			buff.getNN(y, len, del1, ddel);
+			del1 += (ddel * len);
+		}
+	}
+
+	lpf.stepBlock(y, y, len); //post-filter
+}
+
+upshift::upshift(float sampleStep, int blendLength, const corrbuffer& Robj) :
+	Nu(Robj.Nu), DSR(Robj.DSR), maxlen(Robj.maxlen), Rlen(Robj.Rlen),
+	ddel(1.0f - sampleStep), blendlen(blendLength),
+	mindeld((int)ceilf((ceilf(-blendLength * ddel / maxlen) * maxlen - blendLength * ddel) / DSR) + 1), //ddel <= 0
+	mindel(mindeld * DSR),
+	buff(Robj.Nu), blend(blendlen, false),
+	scr(maxlen)
+{
+	//design the pre-filter
+	sofcasc<2>::coefs C;
+	lpf.setCoefs(filt::lowpass4(C, 0.9f / sampleStep, 0.707f), true);
+}
+upshift::~upshift() {}
+
+//Sets the absolute correlation threshold that flags a transient and snaps to front
+void upshift::setSnapThresh(float thresh)
+{
+	Tsnap = thresh;
+}
+//Sets the relative correlation threshold that flags a period to blend across
+void upshift::setBlendThresh(float thresh)
+{
+	Tblend = thresh;
+}
+//Minimum sample shift corresponding roughly to highest pitch period
+void upshift::setMinPeriod(int samples)
+{
+	minperd = max(samples / DSR, 1); //floor to downsampling rate
+	minper = minperd * DSR;
+}
+
+void upshift::clear()
+{
+	buff.clear();
+	lpf.clear();
+	blend.converge();
+	del1 = (float)mindel;
+	del2 = 0.0f;
+}
+
+void upshift::stepBlock(const float* x, float* y, int len, const float* R, float Rmax, int Rmaxdel)
+{
+	lpf.stepBlock(x, y, len); //pre-filter
+
+	//put new data to the buffer
+	buff.put(y, len);
+
+	bool newblend = false; //flags a new blend
+	float del1bs = 0.0f; //del1 assignment on new blend
+	float del2bs = 0.0f; //del2 assignment on new blend
+
+	if (!(blend.check())) { //if no active blend, check to see if we need to start one
+		if (Rmax < Tsnap) { //transient detected,
+			del1bs = (float)mindel; //snap to front
+			del2bs = del1;
+			newblend = true;
+		}
+		else {
+			if (del1 <= (float)mindel) { //nearing the end of the buffer,
+				int curmindeld = (int)ceilf(mindeld - del1 / DSR); //search for furthest backward acceptable blend point
+				int curmaxdeld = min((int)floorf((Nu - maxlen + 1 - del1) / DSR), Rlen - 1);
+				bool isdone = false;
+				int i = curmaxdeld;
+				float curbestdeld = (float)curmindeld;
+				float curbestR = 0.0f;
+				while (!isdone) {
+					if (R[i] >= (Rmax * Tblend)) { //adequate blend correlation
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign
+							isdone = true; //and escape
+						}
+						else if(R[i] > curbestR){ //not local maxima, but still keep track of best found
+							curbestdeld = (float)i; //assign
+							curbestR = R[i]; //but don't escape, wait for something better
+						}
+					}
+					else if(R[i] > curbestR){ //inadequate correlation, but still keep track of best found
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign accurately
+							curbestR = R[i]; //but don't escape, wait for something better
+						}
+						else { //not local maxima
+							curbestdeld = (float)i; //assign directly
+							curbestR = R[i];
+						}
+					}
+					if (--i < curmindeld) {
+					//if (++i > curmaxdeld) {
+						isdone = true; //escape with our best found R value
+					}
+				}
+				del1bs = del1 + curbestdeld * DSR; //assign the best blend
+				del2bs = del1;
+				newblend = true;
+			}
+			//if not near the end of the buffer, no need to blend
+		}
+	}
+
+	if (newblend) { //kick off new blend
+		blend.target(!(blend.current()));
+		blend.swap();
+		del1 = del1bs;
+		del2 = del2bs;
+	}
+
+	if (blend.check()) { //if already blending, use two voices and manage gains
+		buff.getNN(y, len, del1, ddel); //primary voice
+		buff.getNN(scr, len, del2, ddel); //secondary voice
+		del1 += (ddel * len);
+		del2 += (ddel * len);
+		for (int n = 0; n < len; ++n) { //apply blending gains, forming output
+			blend.fade();
+			y[n] *= blend.gain();
+			y[n] += scr[n] * (1.0f - blend.gain());
+		}
+	}
+	else { //no active blend, free run one voice
+		buff.getNN(y, len, del1, ddel);
+		del1 += (ddel * len);
+	}
 }
 
 } //namespace cephean

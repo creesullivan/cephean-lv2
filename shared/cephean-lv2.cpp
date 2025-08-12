@@ -240,6 +240,51 @@ void vexpi(const float* ph, complex<float>* y, int len)
 
 //==================================================
 
+//Replaces NaN values with 0 and saturates values >40 dB amplitude
+//The input is const, so you MUST copy inputs to scratch blocks
+void safeInput(const float* pin, float* x, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		if (isnan(pin[i])) {
+			x[i] = 0.0f;
+		}
+		else {
+			x[i] = bound(pin[i], -100.0f, 100.0f);
+		}
+	}
+}
+
+//Replaces NaN values with 0 and saturates values >40 dB amplitude,
+//also returns true if any NaN or value >80 dB amplitude is found
+//so that the module can clear internal state
+bool safeOutput(float* pout, int len)
+{
+	bool ret = false;
+	for (int i = 0; i < len; ++i) {
+		if (isnan(pout[i])) {
+			pout[i] = 0.0f;
+			ret = true;
+		}
+		else {
+			if (pout[i] > 100.0f) {
+				if (pout[i] > 10000.0f) {
+					ret = true;
+				}
+				pout[i] = 100.0f;
+			}
+			else if (pout[i] < -100.0f) {
+				if (pout[i] < -10000.0f){
+					ret = true;
+				}
+				pout[i] = -100.0f;
+			}
+		}
+	}
+	return ret;
+}
+
+//==================================================
+
 solver::solver(int setN, double setTolerance) : N(setN), tol(setTolerance)
 {
 	//manually allocate these on the heap, because they behave

@@ -168,6 +168,7 @@ public:
 
 	void put(const float* x, int len);
 
+	float get(int del = 0, int hostlen = 1, int hostn = 0) const;
 	void get(float* y, int len, int del = 0) const;
 	float* get(int len, int del = 0);
 	const float* get(int len, int del = 0) const;
@@ -194,6 +195,11 @@ public:
 
 	float get(int del = 0, int hostlen = 1, int hostn = 0) const;
 	void get(float* y, int len, int del = 0) const;
+
+	float getNN(float del, int hostlen = 1, int hostn = 0) const;
+	//interpolated from a starting delay, adjusting ddel samp/samp for pitch shifting
+	void getNN(float* y, int len, float del0 = 0, float ddel = 0.0f, int hostlen = -1, int hostn = 0) const;
+	void getNN(float* y, const float* del, int len) const;
 
 private:
 	fastcircint ind; //points to most recent sample
@@ -295,6 +301,32 @@ private:
 };
 
 //==================================================
+
+//Leaky moving average filter closely approximating a sliding
+//FIR rectangular window filter
+class lma : public monoalg
+{
+public:
+	lma(int slew = 1, double leakInSamples = 48000.0, int maxLengthInSamples = 4096, int maxBlockSize = 128);
+	~lma();
+
+	void setLength(int samples, bool converge = false);
+
+	void clear();
+	virtual float step(float x) override;
+	virtual void stepBlock(const float* x, float* y, int len) override;
+
+private:
+	const double L = 48000.0;
+
+	double alpha, gain, betaN; //y[n] = alpha*y[n-1] + x[n]; z[n] = gain*(y[n] - betaN*y[n+N]);
+	double mem = 0.0; //feedback memory
+	circbuffer buff; //output buffer
+	slewed<int> N; //slewed window length
+	fvec scr; //scratch block
+
+	void update();
+};
 
 //4th order hold algorithm approximating a moving max filter,
 //defined by its quarter-length and clear value.
@@ -409,7 +441,7 @@ inline float interp(const float* x, float ind, int xlen)
 //Linear interpolation at fractional sample indices ind, forming
 // y = x[ind]. Extrapolation is unsafe! Pre-bound ind to [0, xlen-1].
 //
-// Interpolation is unsafe in place, but ind and y can share memory.
+// x == y is unsafe, but ind == y is safe.
 void interp(const float* x, const float* ind, float* y, int ylen);
 
 //Linear interpolation engine that slews and saves a mapping from
@@ -500,44 +532,6 @@ private:
 };
 
 //==================================================
-
-/*
-//Simple mono waveguide reverb algorithm with a slewed duration
-//control and direct access to 16 individual waveguide delays
-//defining the timbre's fine structure.
-class waveverb : public monoalg
-{
-public:
-	waveverb(int slew = 1, int maxdel = 1024);
-	virtual ~waveverb();
-
-	//Set the -20 dB decay point in samples
-	virtual void setDecay(float samples, bool converge = false);
-
-	//Retrieves the 16-length waveguide delay pointer for direct adjustment
-	int* getDelayPointer();
-
-	void clear();
-	virtual float step(float x) override;
-	//default stepBlock function
-
-protected:
-	const int M = 16; //order (fixed to 16)
-	const int N = 1024; //buffer length of each waveguide
-
-	float decay = 0.0f; //-20 dB decay duration control in samples
-
-	ivec delay; //M length waveguide delay vector in samples
-	slewedvec<float> alpha; //alpha parameter vector = 0.1^(-delay/decay)
-
-	fvec buffer; //N by M flat buffer
-	fastcircint pind; //shared put index over voices
-	fcivec gind; //get indices for each voice
-
-	fvec scratch; //M-length scratch vector
-	fvec scratch2; //4-length vector
-};
-*/
 
 //Simple mono waveguide reverb algorithm with a slewed duration
 //control and direct access to 16 individual waveguide delays
@@ -659,6 +653,163 @@ private:
 
 	miniverb core;
 	gain level;
+};
+
+//==================================================
+
+//Mono downsampled flat buffer that lets you compute a
+//normalized autocorrelation sequence. This is useful as
+//the core for pitch-shifting and pitch-detecting processes.
+class corrbuffer
+{
+public:
+	friend class downshift;
+	friend class upshift;
+
+	corrbuffer(int len = 2048, int chunk = 448, int dsr = 8, int maxbsize = 128);
+	~corrbuffer();
+
+	int size() const;
+	int dsize() const;
+	int Rsize() const;
+
+	//Power threshold for division stability
+	void setThresh(float powerThreshold);
+
+	//Correlation samples less than this are ignored by peak finding
+	void setMinPeriod(int samples);
+
+	void clear();
+
+	void put(const float* x, int len);
+
+	//Computes the downsampled normalized autocorrelation sequence and copies to R
+	void corr(float* R);
+
+	//Searches R over its valid range for the largest positive value
+	float corrpeak(const float* R, int& delay) const;
+
+private:
+	const int Nu = 2048;
+	const int Nd = 256;
+	const int Md = 56;
+	const int DSR = 8;
+	const int maxlen = 128;
+
+	const int Rlen = 201;
+	const int K = 127;
+
+	float T = 1e-8f; //threshold parameter for division safety
+	int minperd = 12; //first samples in R we ignore for finding the peak thresh
+
+	fft F; //internal FFT
+	downsampler D; //internal downsampler for fractional block management
+	sofcasc<4> aa; //antialiasing lowpass filter
+	//no phase matching, it should be good enough without it
+	lma ave; //leaky moving average for chunk power sequence
+
+	flatbuffer buffd; //buffer at the downsampled rate
+	flatbuffer bpowd; //current downsampled buffer chunk power sequence
+
+	cfvec fscr1, fscr2; //complex spectral scratch vectors
+	fvec tscr; //time domain scratch vector
+};
+
+//Manages an internal circbuffer of data and performs a fixed
+//pitch downshift by some sample step multiplier <1. Initialize
+//with a reference to a corrbuffer object used for correlation
+//detection. The corrbuffer must be stepped manually before
+//the stepBlock() function so that its results can be shared
+//among several pitch shift objects.
+class downshift
+{
+public:
+	downshift(float sampleStep, int blendLength, const corrbuffer& Robj);
+	~downshift();
+
+	//Sets the absolute correlation threshold that flags a transient and snaps to front
+	void setSnapThresh(float thresh);
+	//Sets the relative correlation threshold that flags a period to blend across
+	void setBlendThresh(float thresh);
+
+	void clear();
+
+	void stepBlock(const float* x, float* y, int len, const float* R, float Rmax, int Rmaxdel);
+
+private:
+	const int Nu = 2048;
+	const int DSR = 8;
+	const int maxlen = 128;
+	const int Rlen = 201;
+
+	const float ddel = 0.0f; //sample/sample delay step >=0
+	const int blendlen = 256;
+
+	const int maxdeld; //maxdel / dsr
+	const int maxdel; //end-of-buffer delay that triggers a force snap to front
+
+	float Tsnap = 0.5f;
+	float Tblend = 0.9f;
+
+	circbuffer buff; //data buffer
+	sofcasc<2> lpf; //4th order BW post-lowpass for artifact reduction
+
+	faded<bool> blend; //blending crossfade helper
+	float del1 = 0.0f; //fractional sample delay for primary blending voice
+	float del2 = 0.0f; //fractional sample delay for secondary blending voice
+	bool intransient = false; //transient state latch
+
+	fvec scr; //scratch voice memory
+};
+
+//Manages an internal circbuffer of data and performs a fixed
+//pitch upshift by some sample step multiplier >1. Initialize
+//with a reference to a corrbuffer object used for correlation
+//detection. The corrbuffer must be stepped manually before
+//the stepBlock() function so that its results can be shared
+//among several pitch shift objects.
+class upshift
+{
+public:
+	upshift(float sampleStep, int blendLength, const corrbuffer& Robj);
+	~upshift();
+
+	//Sets the absolute correlation threshold that flags a transient and snaps to front
+	void setSnapThresh(float thresh);
+	//Sets the relative correlation threshold that flags a period to blend across
+	void setBlendThresh(float thresh);
+	//Minimum sample shift corresponding roughly to highest pitch period
+	void setMinPeriod(int samples);
+
+	void clear();
+
+	void stepBlock(const float* x, float* y, int len, const float* R, float Rmax, int Rmaxdel);
+
+private:
+	const int Nu = 2048;
+	const int DSR = 8;
+	const int maxlen = 128;
+	const int Rlen = 201;
+
+	const float ddel = 0.0f; //sample/sample delay step <=0
+	const int blendlen = 256;
+
+	const int mindeld; //mindel / dsr
+	const int mindel; //snap to front delay and earliest delay that can be blended to
+
+	float Tsnap = 0.5f;
+	float Tblend = 0.9f;
+	int minperd = 12; //minper / dsr
+	int minper = 96; //minimum sample shift by a non-snapping blend
+
+	circbuffer buff; //data buffer
+	sofcasc<2> lpf; //4th order BW pre-lowpass for artifact reduction
+
+	faded<bool> blend; //blending crossfade helper
+	float del1 = 0.0f; //fractional sample delay for primary blending voice
+	float del2 = 0.0f; //fractional sample delay for secondary blending voice
+
+	fvec scr; //scratch voice memory
 };
 
 }

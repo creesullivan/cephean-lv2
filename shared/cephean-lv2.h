@@ -43,6 +43,7 @@ template<class ptype> using complex = std::complex<ptype>;
 using std::abs;
 using std::norm;
 using std::arg;
+using std::conj;
 
 template<class ptype> inline complex<ptype> expi(ptype ph)
 {
@@ -678,6 +679,13 @@ template<class ptype> void vpow(const complex<ptype>* x, ptype* y, int len)
 	}
 }
 
+template<class ptype> void vconj(const complex<ptype>* x, complex<ptype>* y, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		y[i] = conj(x[i]);
+	}
+}
+
 template<class ptype> ptype vdot(const ptype* x, const ptype* y, int len)
 {
 	ptype ret = 0.0f;
@@ -899,6 +907,26 @@ void vexp(const float* x, float* y, int len);
 void vsqrt(const float* x, float* y, int len);
 
 void vexpi(const float* ph, complex<float>* y, int len);
+
+//==================================================
+
+//Solves for the fractional x value of a parabola that intersects
+//all three points (-1, ym), (0, y0), (1, yp) when y0 is a local maxima
+inline float parabsolve(float ym, float y0, float yp)
+{
+	return 0.5f * (ym - yp) / (ym + yp - 2.0f * (y0 + constants.eps));
+}
+
+//==================================================
+
+//Replaces NaN values with 0 and saturates values >40 dB amplitude
+//The input is const, so you MUST copy inputs to scratch blocks
+void safeInput(const float* pin, float* x, int len);
+
+//Replaces NaN values with 0 and saturates values >40 dB amplitude,
+//also returns true if any NaN or value >80 dB amplitude is found
+//so that the module can clear internal state
+bool safeOutput(float* pout, int len);
 
 //==================================================
 

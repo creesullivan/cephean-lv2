@@ -1,0 +1,42 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/octaver>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-octaver.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-octaver.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-octaver.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-octaver.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "OCTAVER" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "downOct" ;
+            lv2:name "Down Oct" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "dry" ;
+            lv2:name "Dry" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "upFifth" ;
+            lv2:name "Up Fifth" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "upOct" ;
+            lv2:name "Up Oct" ;
+        ] , [
+            lv2:index 4 ;
+            lv2:symbol "upTwo" ;
+            lv2:name "Up Two" ;
+        ] , [
+            lv2:index 5 ;
+            lv2:symbol "color" ;
+            lv2:name "Color" ;
+        ] ;
+    ] .

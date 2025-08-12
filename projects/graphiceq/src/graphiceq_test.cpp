@@ -193,13 +193,6 @@ static void runStressTest(bool automation)
 	// Plugin setup -----------------------------
 	graphiceq plug(Fs);
 
-	//LEFT OFF HERE <--- if I'm doing matrix inversion anyway...
-	//should I be using peaking biquads instead of an LR bank?
-	//It will be 2x/3x faster, maybe have better ripple performance,
-	//and avoid group delay with mild filter settings.
-	//
-	//hm...
-
 	automator band1(50.0f); //controls
 	automator band2(50.0f);
 	automator band3(50.0f);
