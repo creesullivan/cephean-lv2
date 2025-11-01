@@ -1,0 +1,42 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/fbdistortion>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-feedback-distortion.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-feedback-distortion.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-feedback-distortion.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-feedback-distortion.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "FB-DISTORTION" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "drive" ;
+            lv2:name "Drive" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "shape" ;
+            lv2:name "Shape" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "feedback" ;
+            lv2:name "Feedback" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "dirty" ;
+            lv2:name "Dirty" ;
+        ] , [
+            lv2:index 4 ;
+            lv2:symbol "color" ;
+            lv2:name "Color" ;
+        ] , [
+            lv2:index 5 ;
+            lv2:symbol "level" ;
+            lv2:name "Level" ;
+        ] ;
+    ] .

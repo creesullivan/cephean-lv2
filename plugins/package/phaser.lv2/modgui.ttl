@@ -1,0 +1,42 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/phaser>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-phaser.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-phaser.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-phaser.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-phaser.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "PHASER" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "depth" ;
+            lv2:name "Depth" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "stop1" ;
+            lv2:name "Stop 1" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "stop2" ;
+            lv2:name "Stop 2" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "rate" ;
+            lv2:name "Rate" ;
+        ] , [
+            lv2:index 4 ;
+            lv2:symbol "tone" ;
+            lv2:name "Tone" ;
+        ] , [
+            lv2:index 5 ;
+            lv2:symbol "level" ;
+            lv2:name "Level" ;
+        ] ;
+    ] .

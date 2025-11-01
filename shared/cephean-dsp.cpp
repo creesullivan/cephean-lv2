@@ -28,7 +28,7 @@ float quadwave(float x)
 	x /= (2.0f * constants.pi);
 	x += 0.25f;
 	x -= floorf(x); //x between 0 and 1
-	x = fabsf(2.0f*x - 1.0f); //x between 0 and 1
+	x = fabsf(2.0f * x - 1.0f); //x between 0 and 1
 	if (x <= 0.5f) {
 		x = 1.0f - 4.0f * x * x;
 	}
@@ -46,7 +46,8 @@ fastcircint::fastcircint(int len, int vset) : wrap(len)
 	set(vset);
 }
 fastcircint::fastcircint(const fastcircint& other) : fastcircint(other.wrap, other.val)
-{}
+{
+}
 fastcircint::~fastcircint() {}
 
 void fastcircint::set(int vset)
@@ -79,7 +80,7 @@ void fastcircint::setlength(int len, setlenmode mode)
 	default: //ZERO
 		val = 0; //simply clear
 	}
-	
+
 }
 void fastcircint::operator=(int vset)
 {
@@ -174,6 +175,113 @@ void fcivec::setwrap(int wrap, fastcircint::setlenmode mode)
 }
 
 
+pow2circint::pow2circint(unsigned int rset, uint16_t vset)
+{
+	setlength(rset, setlenmode::ZERO);
+	set(vset);
+}
+pow2circint::pow2circint(const pow2circint& other) : pow2circint(other.r, other.val)
+{
+}
+pow2circint::~pow2circint() {}
+
+void pow2circint::set(uint16_t vset)
+{
+	val = (vset & wrapmask);
+}
+void pow2circint::setlength(unsigned int rset, setlenmode mode)
+{
+	r = rset;
+	len = (1 << r);
+	wrapmask = (uint16_t)(len - 1);
+	switch (mode) {
+	case setlenmode::WRAP:
+		val &= wrapmask;
+		break;
+	case setlenmode::BOUND:
+		if ((int)val >= len) {
+			val = 0; //clear only if out of range
+		}
+		break;
+	default: //ZERO
+		val = 0; //simply clear
+	}
+
+}
+void pow2circint::operator=(uint16_t vset)
+{
+	set(vset);
+}
+
+uint16_t pow2circint::wrap(uint16_t v) const
+{
+	return (v & wrapmask);
+}
+void pow2circint::wrap(const uint16_t* x, uint16_t* y, int N) const
+{
+	for (int i = 0; i < N; ++i) {
+		y[i] = (x[i] & wrapmask);
+	}
+}
+
+unsigned int pow2circint::length() const
+{
+	return len;
+}
+uint16_t pow2circint::get() const
+{
+	return val;
+}
+pow2circint::operator uint16_t() const
+{
+	return val;
+}
+
+void pow2circint::operator+=(int i)
+{
+	val += i;
+	val &= wrapmask;
+}
+void pow2circint::operator-=(int i)
+{
+	val -= i;
+	val &= wrapmask;
+}
+uint16_t pow2circint::operator++()
+{
+	++val;
+	val &= wrapmask;
+	return val;
+}
+uint16_t pow2circint::operator++(int)
+{
+	uint16_t ret = val++;
+	val &= wrapmask; //post-increment
+	return ret;
+}
+uint16_t pow2circint::operator--()
+{
+	--val;
+	val &= wrapmask;
+	return val; //pre-decrement
+}
+uint16_t pow2circint::operator--(int)
+{
+	uint16_t ret = val--;
+	val &= wrapmask;
+	return ret; //post-decrement
+}
+
+pow2circint pow2circint::operator+(int i) const
+{
+	return pow2circint(r, val + i);
+}
+pow2circint pow2circint::operator-(int i) const
+{
+	return pow2circint(r, val - i);
+}
+
+
 fastcircfloat::fastcircfloat(float wrapset, float valset) : wrap(wrapset)
 {
 	set(valset);
@@ -214,7 +322,7 @@ void fastcircfloat::setwrap(float newwrap, setwrapmode mode)
 		val = 0.0f; //simply clear
 	}
 
-	
+
 }
 void fastcircfloat::operator=(float valset)
 {
@@ -335,7 +443,7 @@ const float* flatbuffer::get(int len, int del) const
 }
 
 circbuffer::circbuffer(int len) : vec<float>(len),
-	ind(len)
+ind(len)
 {
 	clear();
 }
@@ -367,7 +475,7 @@ void circbuffer::put(const float* x, int len)
 {
 	if (len >= N) { //fills up the whole buffer
 		vcopy(x + (len - N), p, N);
-		ind = N-1; //always points to most recent sample
+		ind = N - 1; //always points to most recent sample
 	}
 	else { //overwrite oldest data
 		int remlen = N - 1 - ind.get();
@@ -445,7 +553,7 @@ void circbuffer::getNN(float* y, int len, float del0, float ddel, int hostlen, i
 			gindf += ddel;
 		}
 	}
-	else{ //then all steps move backward in time
+	else { //then all steps move backward in time
 		ddel = -ddel;
 		for (int n = 0; n < len; ++n) {
 			y[n] = p[(int)floorf(gindf)];
@@ -462,6 +570,196 @@ void circbuffer::getNN(float* y, const float* del, int len) const
 		gind.set(gind0 + n - (int)ceilf(del[n])); //ceil for consistency w/ others
 		y[n] = p[gind];
 	}
+}
+
+float circbuffer::getLinear(float del, int hostlen, int hostn) const
+{
+	float gain = floorf(del);
+	fastcircint gind = (ind - (int)gain - (hostlen - 1 - hostn));
+	gain = (del - gain);
+	float ret = (1.0f - gain) * p[gind++];
+	return (ret + gain * p[gind]);
+}
+
+void circbuffer::getLinear(float* y, int len, float del, int hostlen, int hostn) const
+{
+	if (hostlen < 0) { //automatic rebuffering helpers
+		hostlen = len;
+	}
+
+	float gain = floorf(del);
+	fastcircint gind = (ind - (int)gain - (hostlen - 1 - hostn));
+	gain = (del - gain);
+	float gain2 = 1.0f - gain;
+
+	int remlen = N - gind.get();
+	if (len > remlen) { //overruns the boundaries
+		vcopy(p + N - remlen, y, remlen);
+		vcopy(p, y + remlen, len - remlen);
+	}
+	else { //treat like a flat buffer
+		vcopy(p + gind.get(), y, len);
+	}
+	gind += len; //grab one extra point
+	float ylast = p[gind];
+
+	//perform interpolation
+	--len;
+	for (int n = 0; n < len; ++n) {
+		y[n] = gain2 * y[n] + gain * y[n + 1];
+	}
+	y[len] = gain2 * y[len] + gain * ylast;
+}
+
+pow2buffer::pow2buffer(unsigned int rset) : vec<float>((1 << rset)),
+	ind(rset)
+{
+	clear();
+}
+pow2buffer::~pow2buffer() {}
+
+int pow2buffer::size() const
+{
+	return N;
+}
+
+void pow2buffer::reset(unsigned int newr)
+{
+	vec<float>::reset((1 << newr));
+	ind.setlength(newr);
+	clear();
+}
+
+void pow2buffer::clear(float val)
+{
+	vset(p, val, N);
+	ind = 0;
+}
+
+void pow2buffer::put(float x)
+{
+	p[++ind] = x;
+}
+void pow2buffer::put(const float* x, int len)
+{
+	if (len >= N) { //fills up the whole buffer
+		vcopy(x + (len - N), p, N);
+		ind = (uint16_t)(N - 1); //always points to most recent sample
+	}
+	else { //overwrite oldest data
+		uint16_t remlen = (uint16_t)(N - 1 - ind.get());
+		if (len > remlen) { //overruns the boundaries
+			vcopy(x, p + N - remlen, remlen);
+			vcopy(x + remlen, p, len - remlen);
+			ind = (uint16_t)(len - remlen - 1);
+		}
+		else { //treat like flat buffer
+			ind += (uint16_t)len;
+			vcopy(x, p + ind.get() - len + 1, len);
+		}
+	}
+}
+
+void pow2buffer::set(float x, int del, int hostlen, int hostn)
+{
+	uint16_t pind = ind.wrap(ind.get() - (uint16_t)(del + hostlen - 1 - hostn));
+	p[pind] = x;
+}
+void pow2buffer::set(const float* x, int len, int del)
+{
+	pow2circint pind = (ind - (del + len - 1));
+	int remlen = N - 1 - pind.get();
+	if (len > remlen) { //overruns the boundaries
+		vcopy(x, p + N - remlen, remlen);
+		vcopy(x + remlen, p, len - remlen);
+	}
+	else { //treat like a flat buffer
+		vcopy(x, p + pind.get(), len);
+	}
+}
+
+float pow2buffer::get(int del, int hostlen, int hostn) const
+{
+	uint16_t gind = ind.wrap(ind.get() - (uint16_t)(del + hostlen - 1 - hostn));
+	return p[gind];
+}
+void pow2buffer::get(float* y, int len, int del) const
+{
+	pow2circint gind = (ind - (del + len - 1));
+	int remlen = N - gind.get();
+	if (len > remlen) { //overruns the boundaries
+		vcopy(p + N - remlen, y, remlen);
+		vcopy(p, y + remlen, len - remlen);
+	}
+	else { //treat like a flat buffer
+		vcopy(p + gind.get(), y, len);
+	}
+}
+
+warpbuffer::warpbuffer(int slew, int len) : vec<float>(len),
+	xnew(len),
+	bmem(len),
+	alpha(slew, 0.0f)
+{
+	clear();
+}
+warpbuffer::~warpbuffer() {}
+
+int warpbuffer::size() const
+{
+	return vec<float>::size();
+}
+void warpbuffer::reset(int newlen)
+{
+	vec<float>::reset(newlen);
+	xnew.reset(newlen);
+	bmem.reset(newlen);
+	clear();
+}
+
+//Returns alpha for a per node delay in samples, including the extra
+//single sample of delay. For stability, samples strictly >1.
+float warpbuffer::getAlphaForDelay(float samples)
+{
+	return (samples - 2.0f) / samples;
+}
+void warpbuffer::setAlpha(float newAlpha, bool convergeInstantly)
+{
+	alpha.target(newAlpha, convergeInstantly);
+}
+
+void warpbuffer::clear()
+{
+	vset(p, 0.0f, N);
+	vset(xnew.ptr(), 0.0f, N);
+	vset(bmem.ptr(), 0.0f, N);
+}
+
+//Quick and easy all-in-one step function, a new data sample comes in
+//at the front or a single node, the buffer is shifted once, and data
+//is read from the back or another single node
+float warpbuffer::step(float x, int xnode, int ynode)
+{
+	if (ynode < 0) {
+		ynode = N - 1;
+	}
+	alpha.slew();
+
+	//manage node inputs
+	vcopy(p, xnew.ptr() + 1, N - 1);
+	xnew[0] = 0.0f;
+	xnew[xnode] += x;
+
+	//TO DO -- memory stabilizing
+
+	//apply vectorized node filters
+	vmult(p, alpha.get(), p, N);
+	vadd(p, bmem.ptr(), p, N);
+	vmultaccum(xnew.ptr(), -alpha.get(), p, N);
+	vcopy(xnew.ptr(), bmem.ptr(), N);
+
+	//return the requested node output
+	return p[ynode];
 }
 
 
@@ -753,8 +1051,59 @@ void vhold4::step(const float* x, float* y, int chan)
 
 //==================================================
 
-fastratio::fastratio(int slew, int maxNch, bool blockTransposed) :
-	multialg(maxNch, blockTransposed),
+saturator::saturator(){}
+float saturator::step(float x)
+{
+	return 1.0f / (1.0f + fabsf(x));
+}
+
+//stationary points of undriven SOLE
+const float fastratio::x0 = 0.01f; 
+const float fastratio::x1 = 0.1f;
+const float fastratio::x2 = 0.5f;
+//x3 = 1.0f;
+
+fastratio::coefs fastratio::design(float ratio, float drive)
+{
+	coefs ret;
+
+	const float r = ratio;
+	const float g0 = powf(x0, r - 1.0f); //gain as x-> 0
+	const float y1 = powf(x1, r);
+	const float y2 = powf(x2, r);
+	//y3 = x3 = 1
+
+	//form and solve the SOLE
+	float eq11 = y1 - x1;
+	float eq12 = x1 * (y1 - 1.0f);
+	float eq21 = y2 - x2;
+	float eq22 = x2 * (y2 - 1.0f);
+	float det = eq11 * eq22 - eq12 * eq21;
+
+	float sol1 = g0 * (1.0f - x1) + x1 - (y1 / x1);
+	float sol2 = g0 * (1.0f - x2) + x2 - (y2 / x2);
+
+	ret.b1 = (sol1 * eq22 - sol2 * eq12) / det;
+	ret.b2 = (sol2 * eq11 - sol1 * eq21) / det;
+
+	//convert SOLE solution to waveshaper parameters
+	ret.b2 = 0.5f * (ret.b1 + sqrtf(ret.b1 * ret.b1 - 4.0f * ret.b2));
+	ret.b1 = ret.b1 - ret.b2;
+	ret.a1 = (1.0f + ret.b1) * ((1.0f + ret.b2) - g0) / (ret.b2 - ret.b1);
+	ret.a2 = g0 - ret.a1;
+
+	//modify to include drive gain
+	const float d = drive;
+	ret.b1 *= d;
+	ret.b2 *= d;
+	float g3 = powf(d, 1.0f - r);
+	ret.a1 *= g3;
+	ret.a2 *= g3;
+
+	return ret;
+}
+
+fastratio::fastratio(int slew) :
 	prop(2, slew)
 {
 	set(1.0f, 1.0f, true); //init
@@ -762,7 +1111,7 @@ fastratio::fastratio(int slew, int maxNch, bool blockTransposed) :
 
 void fastratio::set(float newRatio, float newDrive, bool converge)
 {
-	newRatio = bound(newRatio, 0.1f, 0.99f); //perfect linearity not supported
+	newRatio = bound(newRatio, 0.1f, 0.999f); //perfect linearity not supported
 	newDrive = max(newDrive, 0.0f);
 
 	prop.target()[0] = newRatio;
@@ -779,11 +1128,11 @@ float fastratio::step(float x)
 		update();
 	}
 
-	x = fabsf(x);
-	float y = coefA.a1 / (1.0f + coefA.b1 * x) + coefA.a2 / (1.0f + coefA.b2 * x);
+	float xabs = fabsf(x);
+	float y = x * (coefA.a1 / (1.0f + coefA.b1 * xabs) + coefA.a2 / (1.0f + coefA.b2 * xabs));
 
 	if (prop.fade()) {
-		x = coefB.a1 / (1.0f + coefB.b1 * x) + coefB.a2 / (1.0f + coefB.b2 * x);
+		x *= (coefB.a1 / (1.0f + coefB.b1 * xabs) + coefB.a2 / (1.0f + coefB.b2 * xabs));
 		y *= prop.gain();
 		y += (1.0f - prop.gain()) * x;
 	}
@@ -796,14 +1145,14 @@ void fastratio::step(float xL, float xR, float& yL, float& yR)
 		update();
 	}
 
-	xL = fabsf(xL);
-	xR = fabsf(xR);
-	yL = coefA.a1 / (1.0f + coefA.b1 * xL) + coefA.a2 / (1.0f + coefA.b2 * xL);
-	yR = coefA.a1 / (1.0f + coefA.b1 * xR) + coefA.a2 / (1.0f + coefA.b2 * xR);
+	float xabsL = fabsf(xL);
+	float xabsR = fabsf(xR);
+	yL = xL * (coefA.a1 / (1.0f + coefA.b1 * xabsL) + coefA.a2 / (1.0f + coefA.b2 * xabsL));
+	yR = xR * (coefA.a1 / (1.0f + coefA.b1 * xabsR) + coefA.a2 / (1.0f + coefA.b2 * xabsR));
 
 	if (prop.fade()) {
-		xL = coefB.a1 / (1.0f + coefB.b1 * xL) + coefB.a2 / (1.0f + coefB.b2 * xL);
-		xR = coefB.a1 / (1.0f + coefB.b1 * xR) + coefB.a2 / (1.0f + coefB.b2 * xR);
+		xL *= (coefB.a1 / (1.0f + coefB.b1 * xabsL) + coefB.a2 / (1.0f + coefB.b2 * xabsL));
+		xR *= (coefB.a1 / (1.0f + coefB.b1 * xabsR) + coefB.a2 / (1.0f + coefB.b2 * xabsR));
 		yL *= prop.gain();
 		yR *= prop.gain();
 		yL += (1.0f - prop.gain()) * xL;
@@ -811,63 +1160,141 @@ void fastratio::step(float xL, float xR, float& yL, float& yR)
 	}
 }
 
-void fastratio::step(const float* x, float* y, int chan)
+float fastratio::stepGain(float x)
 {
 	if (prop.swap()) {
 		update();
 	}
-	bool fading = prop.fade();
 
-	float xtemp = 0.0f;
-	float ytemp = 0.0f;
-	for (int i = 0; i < chan; ++i) {
-		xtemp = fabsf(x[i]);
-		y[i] = coefA.a1 / (1.0f + coefA.b1 * xtemp) + coefA.a2 / (1.0f + coefA.b2 * xtemp);
+	x = fabsf(x);
+	float y = coefA.a1 / (1.0f + coefA.b1 * x) + coefA.a2 / (1.0f + coefA.b2 * x);
 
-		if (fading) {
-			ytemp = coefB.a1 / (1.0f + coefB.b1 * xtemp) + coefB.a2 / (1.0f + coefB.b2 * xtemp);
-			y[i] *= prop.gain();
-			y[i] += (1.0f - prop.gain()) * ytemp;
-		}
+	if (prop.fade()) {
+		x = (coefB.a1 / (1.0f + coefB.b1 * x) + coefB.a2 / (1.0f + coefB.b2 * x));
+		y *= prop.gain();
+		y += (1.0f - prop.gain()) * x;
+	}
+	return y;
+}
+
+void fastratio::stepGainBlock(const float* x, float* g, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		g[i] = stepGain(x[i]);
 	}
 }
+
 
 void fastratio::update()
 {
 	coefB = coefA; //copy out old values for crossfade
+	coefA = design(prop.current()[0], prop.current()[1]);
+}
 
-	const float r = prop.current()[0];
-	const float g0 = powf(x0, r - 1.0f); //gain as x-> 0
-	const float y1 = powf(x1, r);
-	const float y2 = powf(x2, r);
-	//y3 = x3 = 1
+//==================================================
 
-	//form and solve the SOLE
-	float eq11 = y1 - x1;
-	float eq12 = x1 * (y1 - 1.0f);
-	float eq21 = y2 - x2;
-	float eq22 = x2 * (y2 - 1.0f);
-	float det = eq11 * eq22 - eq12 * eq21;
+simshaper::simshaper(int slew, int maxlen) : prop(3, slew), yscr(maxlen), gscr(maxlen)
+{
+	set(1.0f, 1.0f, 0.5f, true); //init
+	clear();
+}
 
-	float sol1 = g0 * (1.0f - x1) + x1 - (y1 / x1);
-	float sol2 = g0 * (1.0f - x2) + x2 - (y2 / x2);
+void simshaper::set(float newRatio, float newDrive, float newRolloff, bool converge)
+{
+	newRatio = bound(newRatio, 0.1f, 0.999f); //perfect linearity not supported
+	newDrive = max(newDrive, 0.0f);
 
-	coefA.b1 = (sol1 * eq22 - sol2 * eq12) / det;
-	coefA.b2 = (sol2 * eq11 - sol1 * eq21) / det;
+	prop.target()[0] = newRatio;
+	prop.target()[1] = newDrive;
+	prop.target()[2] = newRolloff;
+	if (converge) {
+		prop.converge();
+		update();
+	}
+}
 
-	//convert SOLE solution to waveshaper parameters
-	coefA.b2 = 0.5f * (coefA.b1 + sqrtf(coefA.b1 * coefA.b1 - 4.0f * coefA.b2));
-	coefA.b1 = coefA.b1 - coefA.b2;
-	coefA.a1 = (1.0f + coefA.b1) * ((1.0f + coefA.b2) - g0) / (coefA.b2 - coefA.b1);
-	coefA.a2 = g0 - coefA.a1;
+void simshaper::clear()
+{
+	vset(memA, 0.0f, 8);
+	vset(memB, 0.0f, 8);
+}
 
-	//modify to include drive gain
-	const float d = prop.current()[1];
-	coefA.b1 *= d;
-	coefA.b2 *= d;
-	float g3 = coefA.a1 / (1.0f + coefA.b1) + coefA.a2 / (1.0f + coefA.b2);
-	coefA.a1 /= g3;
-	coefA.a2 /= g3; //enforce g3 = 1, so 1 = 1*1
+void simshaper::stepBlock(const float* x, float* y, int len)
+{
+	if (prop.swap()) {
+		update();
+	}
+
+	const fastratio::coefs wstA = wsA;
+	const float b0A = (float)lpfA.b0;
+	const float b1A = (float)lpfA.b1;
+	const float na1A = (float)lpfA.na1;
+
+	float xabs = 0.0f;
+	float xtemp[8];
+	float ytemp = 0.0f;
+
+	for (int i = 0; i < len; ++i) {
+		ytemp = driveA * x[i];
+		for (int m = 0; m < 8; ++m) {
+			xabs = fabsf(ytemp);
+			ytemp *= (wstA.a1 / (1.0f + wstA.b1 * xabs) + wstA.a2 / (1.0f + wstA.b2 * xabs));
+
+			xtemp[m] = ytemp + na1A * memA[m];
+			ytemp = (float)(b0A * xtemp[m] + b1A * memA[m]);
+		}
+		y[i] = makeupA * ytemp;
+		vcopy(xtemp, memA, 8);
+	}
+
+	if (prop.check()) { //if cross fade is underway, apply the B-group with mixing gains
+		prop.fadeBlock(gscr, len);
+		vmult(y, gscr.ptr(), y, len);
+
+		vsub(1.0f, gscr.ptr(), gscr.ptr(), len);
+
+		const fastratio::coefs wstB = wsB;
+		const float b0B = (float)lpfB.b0;
+		const float b1B = (float)lpfB.b1;
+		const float na1B = (float)lpfB.na1;
+
+		for (int i = 0; i < len; ++i) {
+			ytemp = driveB * x[i];
+			for (int m = 0; m < 8; ++m) {
+				xabs = fabsf(ytemp);
+				ytemp *= (wstB.a1 / (1.0f + wstB.b1 * xabs) + wstB.a2 / (1.0f + wstB.b2 * xabs));
+
+				xtemp[m] = ytemp + na1B * memB[m];
+				ytemp = (float)(b0B * xtemp[m] + b1B * memB[m]);
+			}
+			yscr[i] = makeupB * ytemp;
+			vcopy(xtemp, memB, 8);
+		}
+
+		vmult(yscr.ptr(), gscr.ptr(), yscr.ptr(), len);
+		vadd(y, yscr.ptr(), y, len);
+	}
+}
+
+void simshaper::update()
+{
+	//copy out old values for crossfade
+	driveB = driveA;
+	makeupB = makeupA;
+	wsB = wsA;
+	lpfB = lpfA;
+	vcopy(memA, memB, 8);
+
+	//design new values
+	const float curRatio = prop.current()[0];
+	driveA = prop.current()[1];
+	makeupA = powf(driveA, -curRatio);
+	const float subrat = powf(curRatio, 1.0f / M);
+	const float subdrive = powf(1.0f / fastratio::x0, (curRatio - 1.0f) / (M * (subrat - 1.0f))) * fastratio::x0;
+	wsA = fastratio::design(subrat, subdrive);
+
+	lpfA = filt::lowpass1(prop.current()[2]);
+	//memA keeps rolling, hopefully the fade is smooth enough to work out any discontinuities
 }
 
 //==================================================
@@ -1050,90 +1477,7 @@ int downsampler::stepBlock(const float* x, float* y, int xlen)
 }
 
 //==================================================
-/*
-waveverb::waveverb(int slew, int maxdel) :
-	M(16), N(maxdel + 1),
-	alpha(16, slew), delay(16), buffer((maxdel + 1) * 16),
-	pind((maxdel + 1) * 16), gind(16, (maxdel + 1) * 16),
-	scratch(16), scratch2(4)
-{
-	vset(alpha.target(), 0.0f, M);
-	alpha.converge(); //initialize the alpha parameters
-}
-waveverb::~waveverb() {}
 
-//Set the -20 dB decay point in samples
-void waveverb::setDecay(float samples, bool converge)
-{
-	decay = samples; //save a reference value
-	float* setalpha = alpha.target();
-	for (int m = 0; m < M; ++m) { //precompute and slew the sub-parameters
-		setalpha[m] = expf(-(constants.common2nats * delay[m]) / (decay + constants.eps)) / 4.0f;
-	}
-	if (converge) {
-		alpha.converge();
-	}
-}
-
-//Retrieves the M-length waveguide delay pointer for direct adjustment
-int* waveverb::getDelayPointer()
-{
-	return delay;
-}
-
-void waveverb::clear()
-{
-	//clear buffer
-	vset(buffer.ptr(), 0.0f, buffer.size());
-	
-	//reset indices
-	pind = 0;
-	for (int m = 0; m < M; ++m) {
-		gind[m] = m - M * delay[m];
-	}
-}
-
-float waveverb::step(float x)
-{
-	alpha.slew();
-
-	for (int m = 0; m < M; ++m) {
-		scratch[m] = alpha[m] * buffer[gind[m]]; //voice output with leak and compensation
-		gind[m] += M; //step over other voices
-	}
-
-	//collect group sums with power adjustment
-	const float* p1 = scratch;
-	for (int n = 0; n < 4; ++n) {
-		scratch2[n] = sum(p1, 4);
-		p1 += 4;
-	}
-	float y = sum(scratch2.ptr(), 4) + x / M; //output sum
-
-	//apply feedback
-	p1 = scratch;
-	const float* p2 = &(scratch[4]);
-	const float* p3 = &(scratch[8]);
-	const float* p4 = &(scratch[12]);
-	float* p = &(buffer[pind]);
-	for (int m = 0; m < 4; ++m) {
-		*p++ = y - 2.0f * (scratch2[0] - p1[m] + p2[m] + p3[m] + p4[m]);
-	}
-	for (int m = 0; m < 4; ++m) {
-		*p++ = y - 2.0f * (scratch2[1] + p1[m] - p2[m] + p3[m] + p4[m]);
-	}
-	for (int m = 0; m < 4; ++m) {
-		*p++ = y - 2.0f * (scratch2[2] + p1[m] + p2[m] - p3[m] + p4[m]);
-	}
-	for (int m = 0; m < 4; ++m) {
-		*p++ = y - 2.0f * (scratch2[3] + p1[m] + p2[m] + p3[m] - p4[m]);
-	}
-
-	pind += M; //step over other voices
-
-	return 4.0f * (y - x / M);
-}
-*/
 waveverb::waveverb(int slew, int maxbsize, int nominalRate) :
 	M(16), N(maxdel0 * nominalRate + maxbsize), maxlen(maxbsize), rate(nominalRate),
 	alpha(M, slew), delay(M), fscr(maxbsize), dryscr(maxbsize)
@@ -1291,86 +1635,6 @@ void waveverb::stepBlock(const float* x, float* y, int len)
 	vmult(y, 8.0f, y, len);
 }
 
-/*
-miniverb::miniverb(int slew, int maxdel) :
-	M(9), N(maxdel + 1),
-	alpha(M, slew), delay(M), buffer(N * M),
-	pind(N * M), gind(M, N * M),
-	scratch(M), scratch2(3)
-{
-	vset(alpha.target(), 0.0f, M);
-	alpha.converge(); //initialize the alpha parameters
-}
-miniverb::~miniverb() {}
-
-//Set the -20 dB decay point in samples
-void miniverb::setDecay(float samples, bool converge)
-{
-	decay = samples; //save a reference value
-	float* setalpha = alpha.target();
-	for (int m = 0; m < M; ++m) { //precompute and slew the sub-parameters
-		setalpha[m] = expf(-(constants.common2nats * delay[m]) / (decay + constants.eps)) / 3.0f;
-	}
-	if (converge) {
-		alpha.converge();
-	}
-}
-
-//Retrieves the M-length waveguide delay pointer for direct adjustment
-int* miniverb::getDelayPointer()
-{
-	return delay;
-}
-
-void miniverb::clear()
-{
-	//clear buffer
-	vset(buffer.ptr(), 0.0f, buffer.size());
-
-	//reset indices
-	pind = 0;
-	for (int m = 0; m < M; ++m) {
-		gind[m] = m - M * delay[m];
-	}
-}
-
-float miniverb::step(float x)
-{
-	alpha.slew();
-
-	for (int m = 0; m < M; ++m) {
-		scratch[m] = alpha[m] * buffer[gind[m]]; //voice output with leak and compensation
-		gind[m] += M; //step over other voices
-	}
-
-	//collect group sums with power adjustment
-	const float* p1 = scratch;
-	for (int n = 0; n < 3; ++n) {
-		scratch2[n] = sum(p1, 3);
-		p1 += 3;
-	}
-	float y = sum(scratch2.ptr(), 3) + x / M; //output sum
-
-	//apply feedback
-	p1 = scratch;
-	const float* p2 = &(scratch[3]);
-	const float* p3 = &(scratch[6]);
-	float* p = &(buffer[pind]);
-	for (int m = 0; m < 3; ++m) {
-		*p++ = (4.0f / 3.0f) * y - 2.0f * (scratch2[0] - 0.5f * p1[m] + p2[m] + p3[m]);
-	}
-	for (int m = 0; m < 3; ++m) {
-		*p++ = (4.0f / 3.0f) * y - 2.0f * (scratch2[1] + p1[m] - 0.5f * p2[m] + p3[m]);
-	}
-	for (int m = 0; m < 3; ++m) {
-		*p++ = (4.0f / 3.0f) * y - 2.0f * (scratch2[2] + p1[m] + p2[m] - 0.5f * p3[m]);
-	}
-
-	pind += M; //step over other voices
-
-	return 3.0f * (y - x / M);
-}
-*/
 miniverb::miniverb(int slew, int maxbsize, int nominalRate) :
 	M(9), N(maxdel0 * nominalRate + maxbsize), maxlen(maxbsize), rate(nominalRate),
 	alpha(M, slew), delay(M), fscr(maxbsize), dryscr(maxbsize)
@@ -1562,6 +1826,73 @@ float diffuser::getNormGain() const
 
 //==================================================
 
+flangercore::flangercore(int slew, int delslew, int maxdel, int maxbsize) :
+	salpha(expf(-1.0f / ((float)delslew))), sbeta(1.0f - salpha),
+	fb(slew), depth(slew), buff(maxdel + 2)
+{
+	update();
+	clear();
+}
+flangercore::~flangercore() {}
+
+void flangercore::setDepth(float newDepth, float newFeedback, bool convergeImmediately)
+{
+	fb.target(newFeedback, convergeImmediately);
+	depth.target(newDepth, convergeImmediately);
+	if (convergeImmediately) {
+		update();
+	}
+}
+
+void flangercore::clear()
+{
+	buff.clear();
+	fbmem = 0.0f;
+}
+float flangercore::step(float x, float del)
+{
+	//slew first
+	bool shouldUpdate = depth.slew();
+	shouldUpdate = fb.slew() || shouldUpdate;
+	if (shouldUpdate) {
+		update();
+	}
+	delmem = salpha * delmem + sbeta * del;
+
+	fbmem = x + fb * fbmem; //feedback
+	buff.put(fbmem);
+	fbmem = buff.getNN(delmem);
+
+	return (gdry * x - depth * fbmem); //apply
+}
+void flangercore::stepBlock(const float* x, float del, float* y, int len)
+{
+	if (depth.check() || fb.check()) { //with slew
+		for (int i = 0; i < len; ++i) {
+			y[i] = step(x[i], del);
+		}
+	}
+	else { //no parameter slew
+		const float delcur = del;
+		for (int i = 0; i < len; ++i) {
+			delmem = salpha * delmem + sbeta * delcur;
+
+			fbmem = x[i] + fb * fbmem; //feedback
+			buff.put(fbmem);
+			fbmem = buff.getNN(delmem);
+
+			y[i] = (gdry * x[i] - depth * fbmem); //apply
+		}
+	}
+}
+
+void flangercore::update()
+{
+	gdry = (1.0f + (depth / (1.0f - fb)));
+}
+
+//==================================================
+
 corrbuffer::corrbuffer(int len, int chunk, int dsr, int maxbsize) :
 	Nu(len), Nd(len/dsr), Md(chunk/dsr), DSR(dsr), maxlen(maxbsize),
 	Rlen(Nd - Md + 1), K(getKForNpts(Nd)),
@@ -1601,7 +1932,7 @@ void corrbuffer::setThresh(float powerThreshold)
 //Correlation samples less than this are ignored by peak finding
 void corrbuffer::setMinPeriod(int samples)
 {
-	minperd = samples / DSR;
+	minperd = (samples + DSR - 1) / DSR; //rounding up
 }
 
 void corrbuffer::clear()
@@ -1621,7 +1952,7 @@ void corrbuffer::put(const float* x, int len)
 	vmult(tscr.ptr(), tscr.ptr(), tscr.ptr(), len);
 	vmult(tscr.ptr(), (float)Md, tscr.ptr(), len); //convert ave -> sum
 	ave.stepBlock(tscr, tscr, len);
-	vmax(tscr.ptr(), T, tscr.ptr(), len); //guarantee norm stability
+	vadd(tscr.ptr(), T, tscr.ptr(), len); //guarantee norm stability
 	bpowd.put(tscr, len); //update chunk power sequence vector
 }
 
@@ -1636,17 +1967,81 @@ void corrbuffer::corr(float* R)
 	F.rinv(fscr1, tscr, Nd);
 
 	vrevcopy(bpowd.get(Rlen), R, Rlen); //normalize
-	vmult(R, R[0], R, Rlen);
-	vsqrt(R, R, Rlen);
+	vmax(R, R[0], R, Rlen); //error normalization
+	//vmult(R, R[0], R, Rlen); //similarity normalization -- performs badly in transient regions
+	//vsqrt(R, R, Rlen);
 	vdiv(tscr.ptr() + (Md - 1), R, R, Rlen);
 }
 
-//Searches R over its valid range for the largest positive value
-float corrbuffer::corrpeak(const float* R, int& delay) const
+//Searches R over its valid range for the largest positive value that is a local maxima.
+//If there are no local maxima, returns 0 and mindelay + 1
+float corrbuffer::corrpeak(const float* R, int& delay, int mindelay, int maxdelay) const
 {
-	float Rpeak = vfindmax(R + minperd, Rlen - minperd, delay);
-	delay += minperd;
+	if (mindelay < 0) {
+		mindelay = minperd;
+	}
+	if (maxdelay < 0) {
+		maxdelay = Rlen - 1;
+	}
+	--maxdelay; //edge cases are unsupported
+	++mindelay;
+
+	bool isdone = false; //start searching at the first ascending value in the set
+	while (!isdone) {
+		if (R[mindelay] > R[mindelay - 1]) {
+			isdone = true;
+		}
+		else {
+			++mindelay;
+			if (mindelay >= maxdelay) {
+				isdone = true;
+			}
+		}
+	}
+
+	float Rpeak = vfindmax(R + mindelay, maxdelay + 1 - mindelay, delay);
+	delay += mindelay;
+	if (delay == maxdelay) { //check the rear edge case
+		if (R[maxdelay] > R[maxdelay + 1]) {
+			Rpeak = 0.0f; //if not a local max, clear the correlation value
+			delay = mindelay; //and assign the shortest delay time to escape from downstream searches quickly
+		}
+	}
+
 	return Rpeak;
+}
+
+//Searches R over its valid range for its lowest-delay local maximum at least
+//allow away from the global peak, optionally constraining the search range,
+//returning the peak R value and the fractional delay in delay.
+float corrbuffer::firstpeak(const float* R, float& delay, float allow, int mindelay, int maxdelay) const
+{
+	if (mindelay < 0) {
+		mindelay = minperd;
+	}
+	if (maxdelay < 0) {
+		maxdelay = Rlen - 1;
+	}
+	int idelay = 0;
+	float Rpeak = corrpeak(R, idelay, mindelay, maxdelay);
+
+	bool isdone = false;
+	int i = mindelay + 1; //so parabsolve cannot go below mindelay
+	while (!isdone) {
+		if (R[i] >= (Rpeak * allow)) { //adequate blend correlation
+			if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+				delay = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign
+				isdone = true; //and escape
+			}
+		}
+		if (++i > idelay) {			//if we somehow moved past the true peak value
+			delay = (float)idelay;	//the only way is that the correlation sequence is invalid
+			isdone = true;			//so just assign the edge value and escape, Rpeak should hold 0
+		}
+	}
+	delay = bound(delay, (float)mindelay, (float)maxdelay); //just in case
+
+	return Rpeak; //return the true peak correlation for transient testing
 }
 
 downshift::downshift(float sampleStep, int blendLength, const corrbuffer& Robj) :

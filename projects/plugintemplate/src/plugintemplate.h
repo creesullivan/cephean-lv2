@@ -53,4 +53,5 @@ private:
 
 	//helper functions ------
 	void update(int len = 0);
+	void clear();
 };

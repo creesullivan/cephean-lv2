@@ -16,6 +16,7 @@ void plugintemplate::init()
 {
 	rebuff.reset();
 
+	clear();
 	commit();
 	update();
 }
@@ -27,9 +28,15 @@ void plugintemplate::update(int samples)
 	bool force = (samples == 0); //if no processing samples, we are initializing
 
 	//level --------------------------------------
-	float vlev = boundlinmap(level, 0.0f, 100.0f, 0.0f, 2.0f);
-	slewedGain.setLevel(vlev, force);
+	if(level.isnew() || force){
+		float vlev = boundlinmap(level, 0.0f, 100.0f, 0.0f, 2.0f);
+		slewedGain.setLevel(vlev, force);
+		
+		level.clearnew();
+	}
 }
+
+void plugintemplate::clear() {}
 
 void plugintemplate::step(int len)
 {
@@ -47,9 +54,15 @@ void plugintemplate::step(int len)
 
 		//update to slewed parameters
 		update(curlen);
+		
+		safeInput(pin, inscr, curlen);
 
 		//apply the gain algorithm
 		slewedGain.stepBlock(pin, pout, curlen);
+		
+		if (safeOutput(pout, curlen)) {
+			clear();
+		}
 
 		//step to next sub-block
 		pin += curlen;

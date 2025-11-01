@@ -583,7 +583,14 @@ const sofcasc<2>::coefs& lowpass4(sofcasc<2>::coefs& coef, float f, float r, flo
 	float minf, float maxf, float d = 0.0f);
 	
 //====================================================
-	
+
+//Fourth order bandpass with center frequency f and octave bandwidth oct derived
+//from a frequency matched pair of lowpass/highpass filters with unity gain at
+//the center frequency
+const sofcasc<2>::coefs& bandpass4(sofcasc<2>::coefs& coef, float f, float oct);
+
+//====================================================
+
 //8th order (4 section) antialiasing lowpass filter with a bandwidth
 //of 1/DSR the Nyquist rate
 const sofcasc<4>::coefs& antialias8(sofcasc<4>::coefs& coef, int DSR);

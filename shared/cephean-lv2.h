@@ -522,6 +522,10 @@ template<class ptype> void vsortmin(const ptype* x, ptype* y, int* ind, int len,
 	} //returns with the first N values of y/ind holding ascending minimal values and indices
 }
 
+//Wraps the input vector of 16-bit integer indices into y given the power-of-2
+//wrapping length len = 2^r.
+void vwrap(const uint16_t* x, uint16_t* y, unsigned int r);
+
 //Converts a sorted index vector ind of length len into a place vector
 //of the same length. Ex. [2, 0, 1] -> [1, 2, 0]. ind == place is UNSAFE
 void unsort(const int* ind, int* place, int len);
@@ -1163,6 +1167,71 @@ public:
 
 //==================================================
 
+//Smoothed scalar value object that uses a first order all-pole
+//filter to update its value on every sample.
+template<class ptype> class smoothed
+{
+public:
+	smoothed(int samples = 1, ptype initval = (ptype)0)
+	{
+		setSmooth(samples);
+		target(initval, true);
+	}
+	~smoothed() {}
+
+	void setSmooth(int samples)
+	{
+		salpha = expf(-1.0f / samples);
+		sbeta = 1.0f - salpha;
+	}
+
+	void target(ptype set, bool convergeInstantly = false)
+	{
+		next = (double)set;
+		if (convergeInstantly) {
+			converge();
+		}
+	}
+
+	void smooth(int len = 1)
+	{
+		mem = salpha * mem + sbeta * next;
+		val = (ptype)mem;
+	}
+	//smooths a block sample by sample, populating a value trajectory
+	void smoothBlock(ptype* v, int len)
+	{
+		for (int n = 0; n < len; ++n) {
+			mem = salpha * mem + sbeta * next;
+			v[n] = (ptype)mem;
+		}
+		val = v[len - 1];
+	}
+
+	operator ptype() const
+	{
+		return val;
+	}
+	ptype get() const
+	{
+		return val;
+	}
+
+	void converge()
+	{
+		mem = next;
+		val = (ptype)mem;
+	}
+
+private:
+	double salpha = 0.0;
+	double sbeta = 1.0;
+	double mem = 0.0;
+	double next = 0.0;
+
+	ptype val = (ptype)0;
+};
+
 //Slewed scalar value object that allows retargetting, checking,
 //updating, and retrieval.
 template<class ptype> class slewed
@@ -1223,6 +1292,17 @@ public:
 		else {
 			return false; //no new value
 		}
+	}
+	//slews a block sample by sample, populating a value trajectory
+	void slewBlock(ptype* v, int len)
+	{
+		double temp = 0.0;
+		for (int i = 0; i < len; ++i) {
+			temp = min(norm + i * delta, 1.0);
+			v[i] = (ptype)(temp * next + (1.0 - temp) * last);
+		}
+		norm = temp;
+		val = v[len - 1];
 	}
 
 	operator ptype() const
@@ -1421,9 +1501,22 @@ public:
 	{
 		return lastval;
 	}
+	//not involved in active fade! sometimes helpful to see the value that is "on deck"
+	ptype next() const
+	{
+		return nextval;
+	}
 	float gain() const
 	{
 		return g;
+	}
+
+	//fades a block sample by sample, populating a gain trajectory
+	void fadeBlock(float* gcur, int len)
+	{
+		vincspace(gcur, g, delta, len);
+		vmin(gcur, 1.0f, gcur, len);
+		g = gcur[len - 1];
 	}
 
 	bool converge()
@@ -1515,6 +1608,14 @@ public:
 	float gain() const
 	{
 		return g;
+	}
+
+	//fades a block sample by sample, populating a gain trajectory
+	void fadeBlock(float* gcur, int len)
+	{
+		vincspace(gcur, g, delta, len);
+		vmin(gcur, 1.0f, gcur, len);
+		g = gcur[len - 1];
 	}
 
 	bool converge()

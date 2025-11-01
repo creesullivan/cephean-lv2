@@ -740,8 +740,8 @@ sof::coefs highpass2(float f, float r)
 
 	double wC = (double)cosf(constants.pi * f);
 	double alpha = (double)(sinf(constants.pi * f) / (2.0f * r));
-
 	double a0 = 1.0 + alpha;
+
 	coef.b1 = -(1 + wC) / a0;
 	coef.b0 = -0.5 * coef.b1;
 	coef.b2 = coef.b0;
@@ -1116,6 +1116,33 @@ const sofcasc<2>::coefs& lowpass4(sofcasc<2>::coefs& coef, float f, float r, flo
 	coef[1].b0 = g * (1.0 + beta2) / a0;
 	coef[1].b1 = -2.0 * g * wCb / a0;
 	coef[1].b2 = g * (1.0 - beta2) / a0;
+
+	return coef;
+}
+
+//====================================================
+
+//Fourth order bandpass with center frequency f and octave bandwidth oct derived
+//from a frequency matched pair of lowpass/highpass filters with unity gain at
+//the center frequency
+const sofcasc<2>::coefs& bandpass4(sofcasc<2>::coefs& coef, float f, float oct)
+{
+	oct = powf(2.0, -oct / 2.0f); //convert octaves to Q
+	double wC = (double)cosf(constants.pi * f);
+	double alpha = (double)(sinf(constants.pi * f) / (2.0f * oct));
+	double a0 = 1.0 + alpha;
+
+	coef[0].b1 = (1.0 - wC) / (a0 * oct); //lowpass section
+	coef[0].b0 = 0.5 * coef[0].b1;
+	coef[0].b2 = coef[0].b0;
+	coef[0].na1 = 2.0 * wC / a0;
+	coef[0].na2 = (alpha - 1.0) / a0;
+
+	coef[1].b1 = -(1 + wC) / (a0 * oct); //highpass section
+	coef[1].b0 = -0.5 * coef[1].b1;
+	coef[1].b2 = coef[1].b0;
+	coef[1].na1 = coef[0].na1;
+	coef[1].na2 = coef[0].na2;
 
 	return coef;
 }

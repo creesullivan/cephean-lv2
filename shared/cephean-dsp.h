@@ -89,6 +89,52 @@ public:
 	void setwrap(int wrap, fastcircint::setlenmode mode = fastcircint::setlenmode::WRAP);
 };
 
+//Circularly addressing integer on some range between 0 and a given 
+//wrapping length that is equal to 2^r with r <= 16. This is similar
+//to fastcircint, but has unlimited safety up to 16-bit overflow and
+//should run faster due to high efficiency bitwise operations.
+class pow2circint
+{
+public:
+	enum setlenmode
+	{
+		ZERO = 0,
+		WRAP = 1,
+		BOUND = 2
+	};
+
+	pow2circint(unsigned int rset = 16, uint16_t vset = 0);
+	pow2circint(const pow2circint& other);
+	~pow2circint();
+
+	void set(uint16_t vset);
+	void setlength(unsigned int rset, setlenmode mode = setlenmode::WRAP);
+	void operator=(uint16_t vset);
+
+	uint16_t wrap(uint16_t v) const;
+	void wrap(const uint16_t* x, uint16_t* y, int N) const;
+
+	unsigned int length() const;
+	uint16_t get() const;
+	operator uint16_t() const;
+
+	void operator+=(int i);
+	void operator-=(int i);
+	uint16_t operator++();
+	uint16_t operator++(int);
+	uint16_t operator--();
+	uint16_t operator--(int);
+
+	pow2circint operator+(int i) const;
+	pow2circint operator-(int i) const;
+
+private:
+	uint16_t val = 0;
+	unsigned int len = 65536;
+	unsigned int r = 16;
+	uint16_t wrapmask = 0xFFFF;
+};
+
 //Circularly wrapping float on some range between 0 and a given 
 //wrapping length. Helpful for phase state and circular buffers of
 //data with fractional indexing. This object is "fast" because it
@@ -201,8 +247,69 @@ public:
 	void getNN(float* y, int len, float del0 = 0, float ddel = 0.0f, int hostlen = -1, int hostn = 0) const;
 	void getNN(float* y, const float* del, int len) const;
 
+	float getLinear(float del, int hostlen = 1, int hostn = 0) const;
+	void getLinear(float* y, int len, float del, int hostlen = -1, int hostn = 0) const;
+
 private:
 	fastcircint ind; //points to most recent sample
+};
+
+//Mono data buffer with put/set/get functions and circular
+//storage with power-of-two length for speed, stepping the
+//buffer on every put. 
+class pow2buffer : private vec<float>
+{
+public:
+	pow2buffer(unsigned int rset = 16);
+	~pow2buffer();
+
+	int size() const;
+	void reset(unsigned int newr);
+
+	void clear(float val = 0.0f);
+
+	void put(float x);
+	void put(const float* x, int len);
+
+	void set(float x, int del = 0, int hostlen = 1, int hostn = 0);
+	void set(const float* x, int len, int del = 0);
+
+	float get(int del = 0, int hostlen = 1, int hostn = 0) const;
+	void get(float* y, int len, int del = 0) const;
+
+	//interpolation functions TODO
+
+private:
+	pow2circint ind; //points to most recent sample
+};
+
+//Mono flat data buffer with an allpass + sample delay between
+//each node
+class warpbuffer : private vec<float>
+{
+public:
+	warpbuffer(int slew = 1, int len = 1);
+	~warpbuffer();
+
+	int size() const;
+	void reset(int newlen);
+
+	//Returns alpha for a per node delay in samples, including the extra
+	//single sample of delay. For stability, samples strictly >1.
+	static float getAlphaForDelay(float samples);
+	void setAlpha(float newAlpha, bool convergeInstantly=false);
+
+	void clear();
+
+	//Quick and easy all-in-one step function, a new data sample comes in
+	//at the front or a single node, the buffer is shifted once, and data
+	//is read from the back or another single node
+	float step(float x, int xnode = 0, int ynode = -1);
+
+private:
+	slewed<float> alpha; //alpha constant of the warping
+	vec<float> xnew; //input injection memory
+	vec<float> bmem; //numerator memory vector
 };
 
 //==================================================
@@ -375,17 +482,45 @@ private:
 
 //==================================================
 
-//Fast ratio waveshaping nonlinearity with built-in slew.
-//This is valid over a range from roughly -60 dB to 0 dB
-//when undriven, below which it linearizes and above which
-//it saturates. Drive gain is available to reposition the
-//valid range, adjusted so that unity always maps to unity.
+//Fixed saturating waveshaper with unity gain at (0, 0)
+//and a unity saturation point. Apply pre-gain to drive
+//the saturator, and post-gain to adjust the clip point.
 //Returns the gain to multiply by the input, not the final
 //output. This permits gain manipulations.
-class fastratio : public monoalg, public stereoalg, public multialg
+class saturator : public monoalg
 {
 public:
-	fastratio(int slew = 1, int maxNch = 1, bool blockTransposed = false);
+	saturator();
+	float step(float x) override;
+	using monoalg::stepBlock; //default
+};
+
+//Fast ratio waveshaping nonlinearity with built-in slew.
+//This is valid over a range from roughly -40 dB to 0 dB
+//when undriven, below which it linearizes and above which
+//it saturates. Drive gain is available to reposition the
+//valid range, adjusted so that unity always maps to unity
+//under ideal assumptions (approx errors may result).
+class fastratio : public monoalg, public stereoalg
+{
+public:
+	//applied y = x*(a1/(1 + b1*|x|) + a2/(1 + b2*|x|))
+	struct coefs {
+		float a1 = 0.0f;
+		float a2 = 0.0f;
+		float b1 = 0.0f;
+		float b2 = 0.0f;
+	};
+
+	//stationary points of undriven SOLE
+	static const float x0; //0.01f; 
+	static const float x1; //0.1f;
+	static const float x2; //0.5f;
+	//x3 = 1.0f;
+
+	static coefs design(float ratio, float drive);
+
+	fastratio(int slew = 1);
 
 	void set(float newRatio, float newDrive, bool converge = false);
 
@@ -395,25 +530,51 @@ public:
 	void step(float xL, float xR, float& yL, float& yR) override;
 	using stereoalg::stepBlock; //default
 
-	void step(const float* x, float* y, int chan) override;
-	using multialg::stepBlock; //default
+	float stepGain(float x);
+	void stepGainBlock(const float* x, float* g, int len);
+
+	//TO DO <-- block optimizations! at least for mono version
 
 private:
 	fadedvec<float> prop; //ratio and drive
+	coefs coefA, coefB;
 
-	const float x0 = 0.001f; //stationary points of undriven SOLE
-	const float x1 = 0.01f;
-	const float x2 = 0.1f;
-	//x3 = 1.0f;
+	void update();
+};
 
-	struct Coef
-	{
-		float a1 = 0.0f;
-		float a2 = 0.0f;
-		float b1 = 0.0f;
-		float b2 = 0.0f;
-	};
-	Coef coefA, coefB;
+//Fast ratio waveshaper applied in 8 stages with first order
+//lowpass filters in between to antialias simultaneously
+class simshaper
+{
+public:
+	simshaper(int slew = 1, int maxlen = 128);
+
+	void set(float newRatio, float newDrive, float newRolloff, bool converge = false);
+	void clear();
+
+	//x == y is UNSAFE
+	void stepBlock(const float* x, float* y, int len);
+
+private:
+	const int M = 8; //stage count
+
+	fadedvec<float> prop; //ratio, drive, and rolloff
+
+	fvec yscr, gscr; //scratch memory for crossfade output and gain
+
+	//A group for fade
+	float driveA = 1.0f; //input drive gain
+	float makeupA = 1.0f; //output makeup gain
+	fof::coefs lpfA; //shared LPF coefs
+	fastratio::coefs wsA; //shared waveshaper coefs
+	float memA[8]; //memory slots for DF-II LPFs
+
+	//B group for fade
+	float driveB = 1.0f; //input drive gain
+	float makeupB = 1.0f; //output makeup gain
+	fof::coefs lpfB; //shared LPF coefs
+	fastratio::coefs wsB; //shared waveshaper coefs
+	float memB[8]; //memory slots for DF-II LPFs
 
 	void update();
 };
@@ -657,6 +818,163 @@ private:
 
 //==================================================
 
+//Core phaser processing
+template<unsigned int order> class phasercore
+{
+public:
+	phasercore(int slew = 1, int alphaslew = 1) :
+		salpha(expf(-1.0f / ((float)alphaslew))), sbeta(1.0f - salpha),
+		fb(slew), depth(slew)
+	{
+		update();
+		clear();
+	}
+	~phasercore() {}
+
+	//Returns alpha for a per node delay in samples, for stability,
+	//samples must be strictly >0
+	static float getAlphaForDelay(float samples)
+	{
+		return (samples - 1.0f) / (samples + 1.0f);
+	}
+	void setDepth(float newDepth, float newFeedback, bool convergeImmediately = false)
+	{
+		fb.target(newFeedback, convergeImmediately);
+		depth.target(newDepth, convergeImmediately);
+		if (convergeImmediately) {
+			update();
+		}
+	}
+	void clear()
+	{
+		vset(mem, 0.0f, order);
+		fbmem = 0.0f;
+	}
+	float step(float x, float alpha)
+	{
+		//slew first
+		bool shouldUpdate = depth.slew();
+		shouldUpdate = fb.slew() || shouldUpdate;
+		if (shouldUpdate) {
+			update();
+		}
+		amem = salpha * amem + sbeta * alpha;
+
+		const float acur = amem;
+		float xtemp[order];
+		float ytemp = x + fb * fbmem; //feedback
+		for (int n = 0; n < order; ++n) {
+			xtemp[n] = ytemp + acur * mem[n];
+			ytemp = -acur * xtemp[n] + mem[n];
+		}
+		for (int n = 0; n < order; ++n) {
+			mem[n] = xtemp[n];
+		}
+		fbmem = ytemp;
+		return (gdry * x - depth * fbmem);
+	}
+
+	void stepBlock(const float* x, float alpha, float* y, int len)
+	{
+		bool shouldUpdate = false;
+		float xtemp[order];
+		float ytemp = 0.0f;
+
+		for (int i = 0; i < len; ++i) {
+			shouldUpdate = depth.slew(); //slew first
+			shouldUpdate = fb.slew() || shouldUpdate;
+			if (shouldUpdate) {
+				update();
+			}
+			amem = salpha * amem + sbeta * alpha;
+			const float acur = amem;
+			const float* memcur = mem;
+
+			ytemp = x[i] + fb * fbmem; //feedback
+			for (int n = 0; n < order; ++n) {
+				xtemp[n] = ytemp + acur * memcur[n];
+				ytemp = -acur * xtemp[n] + memcur[n];
+			}
+			for (int n = 0; n < order; ++n) {
+				mem[n] = xtemp[n];
+			}
+			fbmem = ytemp;
+			y[i] = gdry * x[i] - depth * fbmem;
+		}
+	}
+
+private:
+	const float salpha = 0.0f; //alpha smoothing constant
+	const float sbeta = 1.0f;
+
+	slewed<float> fb; //feedback gain
+	slewed<float> depth; //depth gain
+	float gdry = 0.0f; //dry gain
+	float amem = 0.0f; //alpha smoothing memory
+
+	float mem[order]; //filter DF-II memory
+	float fbmem = 0.0f; //feedback memory
+
+	void update() { //updates gdry from fb and depth
+		gdry = (1.0f + (depth / (1.0f - fb)));
+	}
+};
+
+//Core flanger processing
+class flangercore
+{
+public:
+	flangercore(int slew = 1, int delslew = 1, int maxdel = 128, int maxbsize = 128);
+	~flangercore();
+
+	void setDepth(float newDepth, float newFeedback, bool convergeImmediately = false);
+
+	void clear();
+	float step(float x, float del);
+	void stepBlock(const float* x, float del, float* y, int len);
+
+private:
+	const float salpha = 0.0f; //delay smoothing constant
+	const float sbeta = 1.0f;
+
+	slewed<float> fb; //feedback gain
+	slewed<float> depth; //depth gain
+	float gdry = 0.0f; //dry gain for DC normalization
+	float delmem = 0.0f; //delay smoothing memory
+
+	circbuffer buff; //core memory buffer
+	float fbmem = 0.0f; //feedback memory
+
+	void update(); //updates gdry from fb and depth
+};
+
+/*
+//Core ensemble chorus/doubler voice processor, passed a shared
+//circbuffer for memory savings in multivoice systems
+class doubler
+{
+public:
+	doubler(const circbuffer& buffref, int maxbsize = 128);
+	~doubler();
+
+	void setMaxDelay(int newMaxDelay);
+	void setMaxStep(float newMaxSampleStep);
+	void setMaxGain(float newMaxGainMult);
+	void setPeriodRange(int mewMinPeriod, int newMaxPeriod);
+
+	void clear(int setDelay = 0, float setShift = 1.0f, float setGainMult = 1.0f);
+	void stepBlock(float* y, int len);
+
+private:
+	const circbuffer& buff; //core shared memory buffer
+
+	fastcircint l; //current index in the buffer
+	
+};
+*/
+
+//==================================================
+
 //Mono downsampled flat buffer that lets you compute a
 //normalized autocorrelation sequence. This is useful as
 //the core for pitch-shifting and pitch-detecting processes.
@@ -687,7 +1005,11 @@ public:
 	void corr(float* R);
 
 	//Searches R over its valid range for the largest positive value
-	float corrpeak(const float* R, int& delay) const;
+	float corrpeak(const float* R, int& delay, int mindelay = -1, int maxdelay = -1) const;
+
+	//Searches R over its valid range for its lowest-delay local maximum at least
+	//allow away from the global peak, optionally constraining the search range
+	float firstpeak(const float* R, float& delay, float allow=0.95f, int mindelay = -1, int maxdelay=-1) const;
 
 private:
 	const int Nu = 2048;
