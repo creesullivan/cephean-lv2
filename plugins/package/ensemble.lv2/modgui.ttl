@@ -1,0 +1,46 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/ensemble>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-ensemble.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-ensemble.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-ensemble.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-ensemble.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "ENSEMBLE" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "mode" ;
+            lv2:name "Mode" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "time" ;
+            lv2:name "Time" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "pitch" ;
+            lv2:name "Pitch" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "rate" ;
+            lv2:name "Rate" ;
+        ] , [
+            lv2:index 4 ;
+            lv2:symbol "amount" ;
+            lv2:name "Amount" ;
+        ] , [
+            lv2:index 5 ;
+            lv2:symbol "rolloff" ;
+            lv2:name "Rolloff" ;
+        ] , [
+            lv2:index 6 ;
+            lv2:symbol "level" ;
+            lv2:name "Level" ;
+        ] ;
+    ] .

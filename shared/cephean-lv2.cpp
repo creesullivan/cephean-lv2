@@ -159,10 +159,10 @@ const Constants constants;
 
 //Wraps the input vector of 16-bit integer indices into y given the power-of-2
 //wrapping length len = 2^r.
-void vwrap(const uint16_t* x, uint16_t* y, unsigned int r)
+void vwrap(const uint16_t* x, uint16_t* y, unsigned int r, int len)
 {
-	const unsigned int len = (1 << r);
-	const uint16_t mask = (const uint16_t)(len - 1);
+	const int wlen = (1 << r);
+	const uint16_t mask = (const uint16_t)(wlen - 1);
 	for (int i = 0; i < len; ++i) {
 		y[i] = x[i] & mask;
 	}

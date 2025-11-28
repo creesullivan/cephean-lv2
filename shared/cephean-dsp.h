@@ -115,6 +115,7 @@ public:
 	void wrap(const uint16_t* x, uint16_t* y, int N) const;
 
 	unsigned int length() const;
+	unsigned int log2length() const;
 	uint16_t get() const;
 	operator uint16_t() const;
 
@@ -260,7 +261,7 @@ private:
 class pow2buffer : private vec<float>
 {
 public:
-	pow2buffer(unsigned int rset = 16);
+	pow2buffer(int maxBlockSize, unsigned int rset = 16);
 	~pow2buffer();
 
 	int size() const;
@@ -276,11 +277,17 @@ public:
 
 	float get(int del = 0, int hostlen = 1, int hostn = 0) const;
 	void get(float* y, int len, int del = 0) const;
+	void get(float* y, int len, uint16_t* del) const;
 
-	//interpolation functions TODO
+	void getLinear(float* y, int len, float* del);
 
 private:
+	const int maxlen;
 	pow2circint ind; //points to most recent sample
+
+	//scratch vectors for linear interpolation
+	fvec gscr1, gscr2; 
+	vec<uint16_t> iscr1, iscr2;
 };
 
 //Mono flat data buffer with an allpass + sample delay between
@@ -321,7 +328,8 @@ public:
 	gain(int slew = 1);
 	~gain();
 
-	void setLevel(float mult, bool converge = false);
+	void setLevel(float mult, bool convergeNow = false);
+	void converge();
 
 	//empty clear function
 	float step(float x) override;
@@ -331,6 +339,23 @@ private:
 	slewed<float> g; //gain multiplier
 };
 
+class bypass
+{
+public:
+	bypass(int maxBlockSize, int slew = 1);
+	~bypass();
+
+	void set(bool shouldBypass, bool converge = false);
+	bool active() const;
+	bool bypassed() const;
+	bool starting() const;
+
+	void stepBlock(const float* x, const float* y, float* z, int len);
+private:
+	const int maxlen;
+	slewed<float> g; //gain multiplier identifying bypass
+	fvec g1scr, g2scr; //storage for block optimized gain application
+};
 
 //==================================================
 

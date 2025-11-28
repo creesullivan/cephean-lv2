@@ -270,7 +270,7 @@ public:
 		bool vnew = false;
 	};
 
-	template<class ptype> class tcontrol : public control
+	template<class gtype, class ptype> class tcontrol : public control
 	{
 	public:
 		tcontrol(plugin* host, int portIndex) : control(portIndex)
@@ -286,28 +286,28 @@ public:
 		void commit() override
 		{
 			if (p != nullptr) {
-				if (v != *p) {
+				if (v != (gtype)(*p)) {
 					vnew = true;
-					v = *p;
+					v = (gtype)(*p);
 				}
 			}
 		}
 
-		operator const ptype() const
+		operator const gtype() const
 		{
 			return v;
 		}
-		ptype get() const
+		gtype get() const
 		{
 			return v;
 		}
 
 	private:
 		const ptype* p = nullptr;
-		ptype v = 0;
+		gtype v = 0;
 	};
-	typedef tcontrol<float> fcontrol;
-	typedef tcontrol<int> icontrol;
+	typedef tcontrol<float, float> fcontrol;
+	typedef tcontrol<int, float> icontrol;
 
 	class input
 	{
@@ -523,8 +523,8 @@ template<class ptype> void vsortmin(const ptype* x, ptype* y, int* ind, int len,
 }
 
 //Wraps the input vector of 16-bit integer indices into y given the power-of-2
-//wrapping length len = 2^r.
-void vwrap(const uint16_t* x, uint16_t* y, unsigned int r);
+//wrapping length wlen = 2^r.
+void vwrap(const uint16_t* x, uint16_t* y, unsigned int r, int len);
 
 //Converts a sorted index vector ind of length len into a place vector
 //of the same length. Ex. [2, 0, 1] -> [1, 2, 0]. ind == place is UNSAFE
@@ -567,6 +567,19 @@ inline double fix(double a) {
 	}
 	else {
 		return ceil(a);
+	}
+}
+
+template<class ytype> void vroundf(const float* x, ytype* y, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		y[i] = (ytype)roundf(x[i]);
+	}
+}
+template<class ytype> void vfloorf(const float* x, ytype* y, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		y[i] = (ytype)floorf(x[i]);
 	}
 }
 
@@ -919,6 +932,20 @@ void vexpi(const float* ph, complex<float>* y, int len);
 inline float parabsolve(float ym, float y0, float yp)
 {
 	return 0.5f * (ym - yp) / (ym + yp - 2.0f * (y0 + constants.eps));
+}
+
+//Solves 0 = a*x^2 + b*x + c for x via the quadratic formula:
+//	x = (-b +- sqrt(b^2 - 4*a*c))/(2*a)
+//
+// Where optional argument negate determines the sign used.
+inline float quadsolve(float a, float b, float c, bool negate = false)
+{
+	if (negate) {
+		return (-b - sqrtf(b * b - 4.0f * a * c)) / (2.0f * a);
+	}
+	else {
+		return (-b + sqrtf(b * b - 4.0f * a * c)) / (2.0f * a);
+	}
 }
 
 //==================================================

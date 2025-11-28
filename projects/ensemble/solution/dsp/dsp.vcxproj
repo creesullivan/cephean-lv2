@@ -139,7 +139,7 @@
       <AdditionalLibraryDirectories>..\..\..\..\shared\extern\fftw-3.3.5-dll64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\x64\Release\dsp.dll ..\..\ensemble.lv2\ensemble.dll
+      <Command>copy ..\x64\Debug\dsp.dll ..\..\ensemble.lv2\ensemble.dll
 copy /y ..\..\..\..\shared\extern\fftw-3.3.5-dll64\libfftw3f-3.dll ..\..\ensemble.lv2\</Command>
     </PostBuildEvent>
     <Manifest>

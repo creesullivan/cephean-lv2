@@ -228,6 +228,10 @@ unsigned int pow2circint::length() const
 {
 	return len;
 }
+unsigned int pow2circint::log2length() const
+{
+	return r;
+}
 uint16_t pow2circint::get() const
 {
 	return val;
@@ -611,7 +615,8 @@ void circbuffer::getLinear(float* y, int len, float del, int hostlen, int hostn)
 	y[len] = gain2 * y[len] + gain * ylast;
 }
 
-pow2buffer::pow2buffer(unsigned int rset) : vec<float>((1 << rset)),
+pow2buffer::pow2buffer(int maxBlockSize, unsigned int rset) : vec<float>((1 << rset)),
+	maxlen(maxBlockSize), gscr1(maxlen), gscr2(maxlen), iscr1(maxlen), iscr2(maxlen),
 	ind(rset)
 {
 	clear();
@@ -695,6 +700,43 @@ void pow2buffer::get(float* y, int len, int del) const
 		vcopy(p + gind.get(), y, len);
 	}
 }
+void pow2buffer::get(float* y, int len, uint16_t* del) const
+{
+	uint16_t ulen = (uint16_t)len;
+	uint16_t offset = ind.get() - (ulen - 1);
+	for (uint16_t i = 0; i < ulen; ++i) {
+		del[i] = (offset + i - del[i]); //embed sample trajectory into delay
+	}
+	vwrap(del, del, ind.log2length(), len); //wrap to buffer range
+	for (int i = 0; i < len; ++i) { //assign to output
+		y[i] = p[del[i]];
+	}
+}
+
+void pow2buffer::getLinear(float* y, int len, float* del)
+{
+	vcopy(del, iscr1.ptr(), len); //rounds down to nearest sample
+
+	vcopy(iscr1.ptr(), gscr1.ptr(), len);
+	vsub(del, gscr1.ptr(), gscr2.ptr(), len); //linear interp gain on [0, 1)
+	vsub(1.0f, gscr2.ptr(), gscr1.ptr(), len); //secondary linear interp gain
+
+	uint16_t ulen = (uint16_t)len;
+	uint16_t offset = ind.get() - (ulen - 1);
+	for (uint16_t i = 0; i < ulen; ++i) {
+		iscr1[i] = (offset + i - iscr1[i]); //embed sample trajectory into delay
+		iscr2[i] = iscr1[i] - 1;
+	}
+
+	vwrap(iscr1, iscr1, ind.log2length(), len);
+	vwrap(iscr2, iscr2, ind.log2length(), len); //wrap to buffer range
+
+	for (int i = 0; i < len; ++i) { //blend and assign
+		gscr1[i] *= p[iscr1[i]];
+		gscr2[i] *= p[iscr2[i]];
+	}
+	vadd(gscr1.ptr(), gscr2.ptr(), y, len);
+}
 
 warpbuffer::warpbuffer(int slew, int len) : vec<float>(len),
 	xnew(len),
@@ -769,9 +811,13 @@ gain::gain(int slew) : g(slew, 1.0f)
 {}
 gain::~gain() {}
 
-void gain::setLevel(float mult, bool converge)
+void gain::setLevel(float mult, bool convergeNow)
 {
-	g.target(mult, converge);
+	g.target(mult, convergeNow);
+}
+void gain::converge()
+{
+	g.converge();
 }
 
 float gain::step(float x)
@@ -789,6 +835,57 @@ void gain::stepBlock(const float* x, float* y, int len)
 	}
 }
 
+bypass::bypass(int maxBlockSize, int slew) :
+	maxlen(maxBlockSize), g(slew), g1scr(maxBlockSize), g2scr(maxBlockSize)
+{
+	set(false, true);
+}
+bypass::~bypass() {}
+
+void bypass::set(bool shouldBypass, bool converge)
+{
+	g.target(shouldBypass ? 0.0f : 1.0f, converge);
+}
+bool bypass::active() const
+{
+	return (g.check() || (g.get() > 0.0f));
+}
+bool bypass::bypassed() const
+{
+	return !active();
+}
+bool bypass::starting() const
+{
+	return (g.check() && (g.get() == 0.0f));
+}
+
+void bypass::stepBlock(const float* x, const float* y, float* z, int len)
+{
+	if (g.check()) {
+		g.slewBlock(g1scr, len);
+		vsub(1.0f, g1scr.ptr(), g2scr.ptr(), len);
+		if (y == z) {
+			vmult(y, g1scr.ptr(), z, len);
+			vmultaccum(x, g2scr.ptr(), z, len);
+		}
+		else{
+			vmult(x, g2scr.ptr(), z, len);
+			vmultaccum(y, g1scr.ptr(), z, len);
+		}
+	}
+	else { //high efficiency steady state
+		if (g.get() == 0.0f) { //bypassed
+			if (x != z) {
+				vcopy(x, z, len);
+			}
+		}
+		else { //active
+			if (y != z) {
+				vcopy(y, z, len);
+			}
+		}
+	}
+}
 
 //==================================================
 

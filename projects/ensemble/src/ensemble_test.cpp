@@ -24,36 +24,38 @@ static void runSoundTest(bool automation)
 	const int bsize = 128; //samples per block
 	const int iter = (int)ceil(dur * Fs / bsize); // to fill the duration
 
-	wavreader in("C:\\Users\\crees\\Music\\Cephean tests\\doo_riffing.wav", dur, 5.0);
+	//wavreader in("C:\\Users\\crees\\Music\\Cephean tests\\doo_riffing.wav", dur, 5.0);
+	//wavreader in("C:\\Users\\crees\\Music\\Cephean tests\\guitar_chugs.wav", dur, 5.0);
+	//wavreader in("C:\\Users\\crees\\Music\\Cephean tests\\dry_guitar_lead.wav", dur, 48.0);
+	//wavreader in("C:\\Users\\crees\\Music\\Cephean tests\\long_guitar_chords.wav", dur, 17.0);
+	wavreader in("C:\\Users\\crees\\Music\\Cephean tests\\finger_bass_riff.wav", dur, 25.0);
 	assert(in.getSampleRate() == Fs);
 	wavwriter out("C:\\Users\\crees\\Music\\Cephean tests\\test_output.wav", 1, Fs, dur);
 
 	// Plugin setup -----------------------------
 	ensemble plug(Fs);
 
-	iautomator mode(1); //controls
-	automator time(50.0f);
-	automator pitch(50.0f);
-	automator level(50.0f);
-	automator rate(50.0f);
-	automator dry(50.0f);
-	automator wet(50.0f);
-	/*
+	automator cmode(4.0f); //controls
+	automator ctime(50.0f);
+	automator cpitch(20.0f);
+	automator crate(50.0f);
+	automator camount(100.0f);
+	automator crolloff(50.0f);
+	automator clevel(50.0f);
 	if (automation) {
-		level = automator(		{ 0,		1 * 48000,	2 * 48000 },
-								{ 0.0f,		100.0f,		0.0f });
+		cmode = automator(		{ 0,		1 * 48000,	2 * 48000 },
+								{ 0.0f,		3.0f,		3.0f });
 	}
-	*/
 	fvec inbuff(bsize); //I/O
 	fvec outbuff(bsize);
 
-	plug.connect_port(0, (void*)(mode.connect())); //ports
-	plug.connect_port(1, (void*)(time.connect())); //ports
-	plug.connect_port(2, (void*)(pitch.connect())); //ports
-	plug.connect_port(3, (void*)(level.connect())); //ports
-	plug.connect_port(4, (void*)(rate.connect())); //ports
-	plug.connect_port(5, (void*)(dry.connect())); //ports
-	plug.connect_port(6, (void*)(wet.connect())); //ports
+	plug.connect_port(0, (void*)(cmode.connect())); //ports
+	plug.connect_port(1, (void*)(ctime.connect())); //ports
+	plug.connect_port(2, (void*)(cpitch.connect())); //ports
+	plug.connect_port(3, (void*)(crate.connect())); //ports
+	plug.connect_port(4, (void*)(camount.connect())); //ports
+	plug.connect_port(5, (void*)(crolloff.connect())); //ports
+	plug.connect_port(6, (void*)(clevel.connect())); //ports
 	plug.connect_port(7, (void*)inbuff.ptr());
 	plug.connect_port(8, (void*)outbuff.ptr());
 
@@ -65,13 +67,13 @@ static void runSoundTest(bool automation)
 	for (int it = 0; it < iter; ++it) {
 		in.get(inbuff, bsize);
 
-		mode.step(bsize);
-		time.step(bsize);
-		pitch.step(bsize);
-		level.step(bsize);
-		rate.step(bsize);
-		dry.step(bsize);
-		wet.step(bsize);
+		cmode.step(bsize);
+		ctime.step(bsize);
+		cpitch.step(bsize);
+		crate.step(bsize);
+		camount.step(bsize);
+		crolloff.step(bsize);
+		clevel.step(bsize);
 
 		plug.step(bsize);
 
@@ -79,7 +81,7 @@ static void runSoundTest(bool automation)
 	}
 
 	//Export the audio file
-	out.write();
+	out.write(); //LEFT OFF HERE <-- some sort of weird memory leak in the buff.get() function, hmm
 
 	cout << "done." << endl;
 }
@@ -93,20 +95,20 @@ static void runStressTest(bool automation)
 	const float Fs = 48000.0f; //samples/sec
 	const int bsize = 128; //samples per block
 	const int iter = (int)ceil(dur * Fs / bsize); // to fill the duration
-
+	
 	wavreader in("C:\\Users\\crees\\Music\\Cephean tests\\doo_riffing.wav", dur, 5.0);
 	assert(in.getSampleRate() == Fs);
 
 	// Plugin setup -----------------------------
 	ensemble plug(Fs);
 
-	iautomator mode(1); //controls
-	automator time(50.0f);
-	automator pitch(50.0f);
-	automator level(50.0f);
-	automator rate(50.0f);
-	automator dry(50.0f);
-	automator wet(50.0f);
+	automator cmode(4.0f); //controls
+	automator ctime(50.0f);
+	automator cpitch(20.0f);
+	automator crate(50.0f);
+	automator camount(100.0f);
+	automator crolloff(50.0f);
+	automator clevel(50.0f);
 	/*
 	if (automation) {
 		level = automator(		{ 0,		1 * 48000,	2 * 48000 },
@@ -116,13 +118,13 @@ static void runStressTest(bool automation)
 	fvec inbuff(bsize); //I/O
 	fvec outbuff(bsize);
 
-	plug.connect_port(0, (void*)(mode.connect())); //ports
-	plug.connect_port(1, (void*)(time.connect())); //ports
-	plug.connect_port(2, (void*)(pitch.connect())); //ports
-	plug.connect_port(3, (void*)(level.connect())); //ports
-	plug.connect_port(4, (void*)(rate.connect())); //ports
-	plug.connect_port(5, (void*)(dry.connect())); //ports
-	plug.connect_port(6, (void*)(wet.connect())); //ports
+	plug.connect_port(0, (void*)(cmode.connect())); //ports
+	plug.connect_port(1, (void*)(ctime.connect())); //ports
+	plug.connect_port(2, (void*)(cpitch.connect())); //ports
+	plug.connect_port(3, (void*)(crate.connect())); //ports
+	plug.connect_port(4, (void*)(camount.connect())); //ports
+	plug.connect_port(5, (void*)(crolloff.connect())); //ports
+	plug.connect_port(6, (void*)(clevel.connect())); //ports
 	plug.connect_port(7, (void*)inbuff.ptr());
 	plug.connect_port(8, (void*)outbuff.ptr());
 
@@ -134,13 +136,13 @@ static void runStressTest(bool automation)
 	for (int it = 0; it < iter; ++it) {
 		in.get(inbuff, bsize);
 
-		mode.step(bsize);
-		time.step(bsize);
-		pitch.step(bsize);
-		level.step(bsize);
-		rate.step(bsize);
-		dry.step(bsize);
-		wet.step(bsize);
+		cmode.step(bsize);
+		ctime.step(bsize);
+		cpitch.step(bsize);
+		crate.step(bsize);
+		camount.step(bsize);
+		crolloff.step(bsize);
+		clevel.step(bsize);
 
 		plug.step(bsize);
 	}

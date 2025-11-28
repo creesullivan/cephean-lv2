@@ -139,7 +139,7 @@
       <AdditionalLibraryDirectories>..\..\..\..\shared\extern\fftw-3.3.5-dll64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\x64\Release\dsp.dll ..\..\reverb.lv2\reverb.dll
+      <Command>copy ..\x64\Debug\dsp.dll ..\..\reverb.lv2\reverb.dll
 copy /y ..\..\..\..\shared\extern\fftw-3.3.5-dll64\libfftw3f-3.dll ..\..\reverb.lv2\</Command>
     </PostBuildEvent>
     <Manifest>
