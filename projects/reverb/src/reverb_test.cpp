@@ -340,9 +340,9 @@ static void determineBestSeed()
 
 int main()
 {
-	runSoundTest(true);
+	//runSoundTest(true);
 	//runImpulseTest();
-	//runStressTest(false);
+	runStressTest(false);
 	//determineBestSeed();
 
 	return 0;

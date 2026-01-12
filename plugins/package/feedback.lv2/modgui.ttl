@@ -1,0 +1,26 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/feedback>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-feedback.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-feedback.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-feedback.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-feedback.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "Feedback" ;
+        modgui:model "boxy" ;
+        modgui:panel "2-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "amount" ;
+            lv2:name "Amount" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "dry" ;
+            lv2:name "Dry" ;
+        ] ;
+    ] .

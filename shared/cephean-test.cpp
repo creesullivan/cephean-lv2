@@ -307,6 +307,55 @@ void iautomator::step(int len)
 	}
 }
 
+plugintester::plugintester(int numControls, int numInputs, int numOutputs, int setBlockSize) :
+	vctrl(numControls), vin(numInputs), vout(numOutputs)
+{
+	for (int i = 0; i < numInputs; ++i) {
+		vin[i].reset(setBlockSize);
+	}
+	for (int i = 0; i < numOutputs; ++i) {
+		vout[i].reset(setBlockSize);
+	}
+}
+plugintester::~plugintester() {}
+
+void plugintester::setControlValue(int index, float val)
+{
+	vctrl[index] = automator(val);
+}
+void plugintester::setControlAutomator(int index, const automator& val)
+{
+	vctrl[index] = val;
+}
+
+void plugintester::connect(plugin* p)
+{
+	int index = 0;
+	for (int i = 0; i < vctrl.size(); ++i) {
+		p->connect_port(index++, (void*)(vctrl[i].connect()));
+	}
+	for (int i = 0; i < vin.size(); ++i) {
+		p->connect_port(index++, (void*)(vin[i].ptr()));
+	}
+	for (int i = 0; i < vout.size(); ++i) {
+		p->connect_port(index++, (void*)(vout[i].ptr()));
+	}
+}
+void plugintester::step(int len)
+{
+	for (int i = 0; i < vctrl.size(); ++i) {
+		vctrl[i].step(len);
+	}
+}
+
+float* plugintester::inputData(int index) 
+{
+	return vin[index].ptr();
+}
+float* plugintester::outputData(int index)
+{
+	return vout[index].ptr();
+}
 
 //==================================================
 

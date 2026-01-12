@@ -14,11 +14,43 @@ phaser::phaser(float setFs) :
 	dph((int)roundf(slewdur* Fs)),
 	del1((int)roundf(slewdur * Fs)),
 	del2((int)roundf(slewdur * Fs)),
-	dryGain((int)roundf(slewdur* Fs)),
-	wetGain((int)roundf(slewdur* Fs)),
+
+	freqRolloff((int)roundf(slewdur* Fs)),
+	lpf(maxlen), hpf(maxlen),
+
+	outGain((int)roundf(slewdur* Fs)),
 
 	inscr(maxlen)
-{}
+{
+	//TESTING THE DEPTH I WANT TO USE -- IMPULSE RESPONSE
+	int npts = 8192;
+	float alpha = 0.0f;// pcore.getAlphaForDelay(96.0f);
+	fvec x(npts);
+	vset(x.ptr(), 0.0f, npts);
+	x[0] = 1.0f;
+	pcore.setDepth(0.9f, 0.45f, true); //let fb = dep/2 as an easy rule!
+	pcore.clear(alpha);
+	pcore.stepBlock(x, alpha, x, npts);
+
+	int K = getKForNpts(npts);
+	fvec X(K);
+	fvec XdB(K);
+	fft F(npts);
+	F.rmag(x, X, npts);
+	vmagdB(X, XdB, K);
+	vmax(XdB.ptr(), -20.0f, XdB.ptr(), K);
+
+ 	float bpdummy = 0.0f;
+
+	//if:
+	//H(w) = gd + gw*e^(-1*jw)/(1 - fb*e^(-1j*w)), resp @w=pi?
+	//H(pi) = gd - gw/(1 + fb) = 1 + depth <-- for positive depth only
+	//H(0) = gd + gw/(1 - fb) = 1 - depth <--
+	//gd = (1-depth) - gw/(1 - fb)
+	//(1-depth) - gw(1/(1-fb) + 1/(1+fb)) = (1+depth),
+	//-gw((1 + fb + 1 - fb = 2)/((1-fb)(1+fb)=1-fb*fb)) = 2*depth
+	// gw = depth*(fb*fb-1)
+}
 phaser::~phaser() {}
 
 void phaser::init()
@@ -38,21 +70,17 @@ void phaser::update(int samples)
 
 	//depth ------------------------------
 	if (depth.isnew() || force) {
-		float fbval = 0.0f;
 		float depval = 0.0f;
-		if (depth <= 25.0f) {
-			fbval = 0.0f;
-			depval = boundlinmap(depth, 0.0f, 25.0f, 0.0f, 0.5f);
-		}
-		else if (depth <= 50.0f) {
-			fbval = boundlinmap(depth, 25.0f, 50.0f, 0.0f, 0.5f);
-			depval = boundlinmap(depth, 25.0f, 50.0f, 0.5f, 1.0f);
+		float fbval = 0.0f;
+		if (depth.get() <= 75.0f) {
+			depval = boundlinmap(depth, 0.0f, 75.0f, 0.0f, 1.0f);
+			fbval = 0.5f * depval;
 		}
 		else {
-			fbval = boundlogmap(depth, 50.0f, 100.0f, 0.5f, 0.9f);
 			depval = 1.0f;
+			fbval = boundlinmap(depth, 75.0f, 100.0f, 0.5f, 0.9f);
 		}
-		pcore.setDepth(depval, -fbval, force);
+		pcore.setDepth(depval, fbval, force);
 
 		depth.clearnew();
 	}
@@ -81,14 +109,34 @@ void phaser::update(int samples)
 		rate.clearnew();
 	}
 
-	//tone & level ----------------------
-	if (tone.isnew() || level.isnew() || force) {
-		float tval = boundlinmap(tone, 0.0f, 100.0f, 0.0f, -0.5f);
-		float lval = boundlinmap(level, 0.0f, 100.0f, 0.0f, 2.0f);
-		dryGain.setLevel(lval * tval, force);
-		wetGain.setLevel(lval * (1.0f - fabsf(tval)), force);
+	//rolloff --------------------------------------
+	if (rolloff.isnew() || force) {
+		float vrolloff = 0.0f;
+		if (rolloff.get() < 25.0f) {
+			vrolloff = boundlinmap(rolloff, 0.0f, 25.0f, 20.0f, 100.0f);
+		}
+		else {
+			vrolloff = boundlogmap(rolloff, 25.0f, 100.0f, 100.0f, 1000.0f);
+		}
+		freqRolloff.target(vrolloff / (0.5f * Fs), force);
 
-		tone.clearnew();
+		rolloff.clearnew();
+	}
+	if (freqRolloff.slew(samples) || force) {
+		sof::coefs clpf, chpf;
+		filt::crossover2(clpf, chpf, freqRolloff, 20.0f / (0.5f * Fs), 20000.0f / (0.5f * Fs));
+		lpf.setCoefs(clpf, force);
+		hpf.setCoefs(chpf, force);
+	}
+
+	//level ----------------------
+	if (level.isnew() || force) {
+		//float tval = boundlinmap(tone, 0.0f, 100.0f, 0.0f, -0.5f);
+		float lval = boundlinmap(level, 0.0f, 100.0f, 0.0f, 2.0f);
+		//dryGain.setLevel(lval * tval, force);
+		//wetGain.setLevel(lval * (1.0f - fabsf(tval)), force); //TODO <--- embed dry/wet gain in phasercore
+		outGain.setLevel(lval, force);
+
 		level.clearnew();
 	}
 }
@@ -97,6 +145,8 @@ void phaser::clear()
 {
 	pcore.clear();
 	ph = 0.0f;
+	lpf.clear();
+	hpf.clear();
 }
 
 void phaser::step(int len)
@@ -122,18 +172,20 @@ void phaser::step(int len)
 		dph.slew(curlen);
 		del1.slew(curlen);
 		del2.slew(curlen);
-		dph.slew(curlen);
 		ph += (dph * curlen);
 		float curalpha = boundlogmap(triwave(ph), -1.0f, 1.0f, del1, del2);
 		curalpha = pcore.getAlphaForDelay(curalpha);
 
-		//apply the warped buffer with feedback
+		//apply the warped buffer with feedback and fixed dry/wet mix
 		pcore.stepBlock(inscr, curalpha, pout, curlen);
 
-		//mix dry/wet to generate comb filtered response
-		dryGain.stepBlock(inscr, inscr, curlen);
-		wetGain.stepBlock(pout, pout, curlen);
+		//crossover and mixing
+		lpf.stepBlock(inscr, inscr, curlen);
+		hpf.stepBlock(pout, pout, curlen);
 		vadd(inscr.ptr(), pout, pout, curlen);
+
+		//output gain
+		outGain.stepBlock(pout, pout, curlen);
 
 		if (safeOutput(pout, curlen)) {
 			clear();

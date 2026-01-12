@@ -102,7 +102,7 @@ static void runStressTest(bool automation)
 	// Plugin setup -----------------------------
 	ensemble plug(Fs);
 
-	automator cmode(4.0f); //controls
+	automator cmode(3.0f); //controls
 	automator ctime(50.0f);
 	automator cpitch(20.0f);
 	automator crate(50.0f);

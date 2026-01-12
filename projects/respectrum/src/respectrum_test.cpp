@@ -102,7 +102,7 @@ static void runSoundTest(bool automation)
 static void runStressTest(bool automation)
 {
 	// File I/O setup ---------------------------
-	const double dur = 100.0; //seconds
+	const double dur = 1000.0; //seconds
 	const float Fs = 48000.0f; //samples/sec
 	const int bsize = 128; //samples per block
 	const int iter = (int)ceil(dur * Fs / bsize); // to fill the duration
@@ -173,8 +173,8 @@ static void runStressTest(bool automation)
 
 int main()
 {
-	runSoundTest(true);
-	//runStressTest(true);
+	//runSoundTest(true);
+	runStressTest(false);
 
 	return 0;
 }

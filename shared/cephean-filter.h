@@ -156,6 +156,7 @@ public:
 	coefs getCoefs() const;
 
 	void clear();
+	void clear(const sof& toOther);
 
 	float step(float x) override;
 	void stepBlock(const float* x, float* y, int len) override;

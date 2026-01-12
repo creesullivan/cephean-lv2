@@ -440,6 +440,17 @@ void sof::clear()
 	vset(vmem2.ptr(), 0.0, vmem1.size());
 }
 
+void sof::clear(const sof& toOther)
+{
+	mem1L = toOther.mem1L; //mono/stereo
+	mem1R = toOther.mem1R;
+	mem2L = toOther.mem2L;
+	mem2R = toOther.mem2R;
+
+	vcopy(toOther.vmem1.ptr(), vmem1.ptr(), min(toOther.vmem1.size(), vmem1.size())); //multichannel
+	vcopy(toOther.vmem2.ptr(), vmem2.ptr(), min(toOther.vmem2.size(), vmem2.size()));
+}
+
 float sof::step(float x)
 {
 	sc.slew();

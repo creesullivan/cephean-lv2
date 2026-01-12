@@ -92,7 +92,7 @@ private:
 class automator
 {
 public:
-	automator(float value);
+	automator(float value = 0.0f);
 	automator(std::vector<long unsigned int> samples,
 		std::vector<float> values,
 		bool loop = true);
@@ -115,6 +115,7 @@ private:
 
 //Class that grabs hold of an int parameter control and automates
 //it with a stairstep selection throughout the recording test.
+// ***** DEPRECATED USE AUTOMATOR FOR EVERYTHING *****
 class iautomator
 {
 public:
@@ -137,6 +138,29 @@ private:
 	std::vector<long unsigned int> x;
 	std::vector<int> v;
 	bool loops = true;
+};
+
+//Class that adds a collection of automator objects and port vectors
+//and automatically manages them all together for convenience.
+class plugintester
+{
+public:
+	plugintester(int numControls, int numInputs, int numOutputs, int setBlockSize = 128);
+	~plugintester();
+
+	void setControlValue(int index, float val);
+	void setControlAutomator(int index, const automator& val);
+
+	void connect(plugin* p);
+	void step(int len);
+
+	float* inputData(int index = 0);
+	float* outputData(int index = 0);
+	
+private:
+	vec<automator> vctrl;
+	vec<fvec> vin;
+	vec<fvec> vout;
 };
 
 

@@ -8,6 +8,8 @@
 plugintemplate::plugintemplate(float setFs) :
 	plugin(PLUG_CONTROLS, PLUG_INPUTS, PLUG_OUTPUTS, setFs),
 	rebuff(maxlen),
+	inscr(maxlen),
+
 	slewedGain((int)roundf(slewdur * setFs))
 {}
 plugintemplate::~plugintemplate() {}

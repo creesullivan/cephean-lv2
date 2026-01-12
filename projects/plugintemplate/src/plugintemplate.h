@@ -44,10 +44,11 @@ private:
 	//constants -------------
 	const float slewdur = 0.1f;			//seconds
 
-	const int maxlen = 256;				//maximum block size
+	const int maxlen = 128;				//maximum block size
 
 	//state etc.-------------
 	rebuffer rebuff;
+	fvec inscr;
 
 	gain slewedGain;
 

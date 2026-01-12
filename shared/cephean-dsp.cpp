@@ -628,8 +628,14 @@ int pow2buffer::size() const
 	return N;
 }
 
-void pow2buffer::reset(unsigned int newr)
+void pow2buffer::reset(int newmaxlen, unsigned int newr)
 {
+	maxlen = newmaxlen;
+	gscr1.reset(maxlen);
+	gscr2.reset(maxlen);
+	iscr1.reset(maxlen);
+	iscr2.reset(maxlen);
+
 	vec<float>::reset((1 << newr));
 	ind.setlength(newr);
 	clear();
@@ -1392,6 +1398,114 @@ void simshaper::update()
 
 	lpfA = filt::lowpass1(prop.current()[2]);
 	//memA keeps rolling, hopefully the fade is smooth enough to work out any discontinuities
+}
+
+//==================================================
+
+simsaturator::simsaturator(int slew, int maxlen) :
+	prop(2, slew), ascr(maxlen), gscr(maxlen), yscr(maxlen)
+{
+	set(1.0f, 0.0f, true); //init
+	clear();
+}
+simsaturator::~simsaturator() {}
+
+void simsaturator::set(float newDrive, float newAlpha, bool converge)
+{
+	prop.target()[0] = newDrive;
+	prop.target()[1] = newAlpha;
+	if (converge) {
+		prop.converge();
+		update();
+	}
+}
+void simsaturator::clear()
+{
+	vset(memA, 0.0f, 8);
+	mufA.clear();
+	vset(memB, 0.0f, 8);
+	mufB.clear();
+}
+
+void simsaturator::stepBlock(const float* x, const float* T, float* y, int len)
+{
+	if (prop.swap()) {
+		update();
+	}
+
+	vmult(T, gTA, ascr.ptr(), len);
+	vdiv(1.0f, ascr.ptr(), ascr.ptr(), len); //form global a vector
+
+	float xtemp = 0.0f;
+	float atemp = 0.0f;
+	for (int i = 0; i < len; ++i) {
+		xtemp = x[i];
+		atemp = ascr[i];
+		for (int m = 0; m < 8; ++m) {
+			xtemp /= (fabsf(xtemp) * atemp + bA); //saturate
+			memA[m] *= alphaA;
+			memA[m] += betaA * xtemp; //smooth
+			xtemp = memA[m];
+		}
+		y[i] = xtemp;
+	}
+	mufA.stepBlock(y, y, len);
+
+	if (prop.check()) { //if cross fade is underway, apply the B-group with mixing gains
+		prop.fadeBlock(gscr, len);
+		vmult(y, gscr.ptr(), y, len);
+		vsub(1.0f, gscr.ptr(), gscr.ptr(), len);
+
+		vmult(T, gTB, ascr.ptr(), len);
+		vdiv(1.0f, ascr.ptr(), ascr.ptr(), len); //reform global a vector
+
+		for (int i = 0; i < len; ++i) {
+			xtemp = x[i];
+			atemp = ascr[i];
+			for (int m = 0; m < 8; ++m) {
+				xtemp /= (fabsf(xtemp) * atemp + bB); //saturate
+				memB[m] *= alphaB;
+				memB[m] += betaB * xtemp; //smooth
+				xtemp = memB[m];
+			}
+			yscr[i] = xtemp;
+		}
+		mufB.stepBlock(yscr, yscr, len);
+
+		vmult(yscr.ptr(), gscr.ptr(), yscr.ptr(), len);
+		vadd(y, yscr.ptr(), y, len);
+	}
+}
+
+void simsaturator::update()
+{
+	//copy out old values for crossfade
+	gTB = gTA;
+	bB = bA;
+	alphaB = alphaA;
+	betaB = betaA;
+	vcopy(memA, memB, 8);
+	mufB.setCoefs(mufA.getCoefs(), true);
+	mufB.clear(mufA);
+
+	//design new smoother and makeup filter
+	alphaA = prop.current()[1];
+	betaA = 1.0f - alphaA;
+	float fmuf = acosf(2.0f * alphaA / (1.0f + alphaA * alphaA)) / constants.pi;
+	float gmuf = (1.0f - alphaA) / (1 + alphaA); //NQ gain loss per stage
+	gmuf = 0.5f * (gmuf * gmuf + 1.0f); //center freq power loss per stage
+	gmuf *= gmuf; //total root gain loss at center freq, the amount we makeup
+	mufA.setCoefs(filt::peaking2(fmuf, 0.6f, 1.0f / gmuf), true); //Q=0.6 is heuristic
+
+	//design new saturation core
+	float drive = prop.current()[0];
+	drive = sqrtf(drive);
+	gTA = (drive + 1.0f) / drive;
+	drive = sqrtf(drive);
+	gTA *= (drive + 1.0f) / drive;
+	drive = sqrtf(drive);
+	gTA *= (drive + 1.0f) / drive;
+	bA = 1.0f / drive;
 }
 
 //==================================================

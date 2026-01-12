@@ -374,9 +374,9 @@ struct Constants
 	const float eps = 1e-37f; //theoretical eps is around 1e-38
 	const float p707 = 0.70710678118654752440084436210485f;
 
-	const float db2nats = 0.11512925464970228420089957273422f;
-	const float common2nats = 2.3025850929940456840179914546844f;
-	const float two2nats = 0.69314718055994530941723212145818f;
+	const float db2nats = 0.11512925464970228420089957273422f; //exp(db2nats*X) = 10^(X/20)
+	const float common2nats = 2.3025850929940456840179914546844f; //exp(common2nats*X) = 10^X
+	const float two2nats = 0.69314718055994530941723212145818f; //exp(two2nats*X) = 2^X
 };
 //Collection of mathematical constants
 extern const Constants constants;

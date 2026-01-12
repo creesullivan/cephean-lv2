@@ -261,11 +261,11 @@ private:
 class pow2buffer : private vec<float>
 {
 public:
-	pow2buffer(int maxBlockSize, unsigned int rset = 16);
+	pow2buffer(int maxBlockSize = 128, unsigned int rset = 16);
 	~pow2buffer();
 
 	int size() const;
-	void reset(unsigned int newr);
+	void reset(int newmaxlen, unsigned int newr);
 
 	void clear(float val = 0.0f);
 
@@ -282,7 +282,7 @@ public:
 	void getLinear(float* y, int len, float* del);
 
 private:
-	const int maxlen;
+	int maxlen;
 	pow2circint ind; //points to most recent sample
 
 	//scratch vectors for linear interpolation
@@ -558,8 +558,6 @@ public:
 	float stepGain(float x);
 	void stepGainBlock(const float* x, float* g, int len);
 
-	//TO DO <-- block optimizations! at least for mono version
-
 private:
 	fadedvec<float> prop; //ratio and drive
 	coefs coefA, coefB;
@@ -600,6 +598,46 @@ private:
 	fof::coefs lpfB; //shared LPF coefs
 	fastratio::coefs wsB; //shared waveshaper coefs
 	float memB[8]; //memory slots for DF-II LPFs
+
+	void update();
+};
+
+//Fast 8-stage adaptive saturator with built-in lowpass filters. The
+//saturation point is passed in as a second input block.
+class simsaturator
+{
+public:
+	simsaturator(int slew = 1, int maxlen = 128);
+	~simsaturator();
+
+	//alpha set directly here to define the lowpass cascade and makeup filter
+	void set(float newDrive, float newAlpha, bool converge = false);
+	void clear();
+
+	void stepBlock(const float* x, const float* T, float* y, int len);
+
+private:
+	const int M = 8; //stage count
+
+	fadedvec<float> prop; //drive and alpha
+
+	fvec ascr, gscr, yscr; //scratch vectors
+
+	//A group for fade
+	float gTA = 1.0f; //mult to form T
+	float bA = 1.0f; //denom bias = 1/s
+	float alphaA = 0.0f; //lowpass smoothing coef
+	float betaA = 1.0f; //lowpass makeup coef = 1.0f - alpha
+	float memA[8]; //memory slots for smoother
+	sof mufA; //makeup filter
+
+	//B group for fade
+	float gTB = 1.0f; //mult to form T
+	float bB = 1.0f; //denom bias = 1/s
+	float alphaB = 0.0f; //lowpass smoothing coef
+	float betaB = 1.0f; //lowpass makeup coef = 1.0f - alpha
+	float memB[8]; //memory slots for smoother
+	sof mufB; //makeup filter
 
 	void update();
 };
@@ -841,6 +879,139 @@ private:
 	gain level;
 };
 
+//Mono waveguide algorithm with time-varying echo tap durations
+//and variable voice count for quality/efficiency tradeoffs
+template <unsigned int M> class waveverb2
+{
+public:
+	waveverb2(int slew = 1, int maxbsize = 128, int nominalRate = 1, unsigned int seed = 0) :
+		rate(nominalRate),
+		maxlen(maxbsize),
+		N(4096 * rate),
+		r((int)roundf(log2f((float)N))),
+		maxdel(N - maxlen),
+		mindel(512 * rate),
+		avedel((2.0f/3.0f)*(maxdel - mindel)),
+		deldiff((float)(mindel - maxdel)),
+
+		ph0(M),
+		dph(slew),
+		dalpha(expf(-maxlen/(256.0f*nominalRate))),
+		delmem1(M), delmem2(M),
+
+		alpha(slew),
+
+		dryscr(maxlen),
+		alphascr(maxlen)
+	{
+		//randomly initialize the phase vector in a fixed way based on the hardware
+		srand(seed);
+		for (int m = 0; m < M; ++m) {
+			ph0[m] = (m + 0.5f * randf()) / M;
+		}
+
+		//allocate matrix-style memory
+		for (int m = 0; m < M; ++m) {
+			buffer[m].reset(maxlen, r);
+			xscr[m].reset(N);
+		}
+		
+		setDecay(0.0f, true);
+		setRate(0.0f, true);
+		clear();
+	}
+	~waveverb2() {}
+
+	//Set the -20 dB decay point in samples
+	void setDecay(float samples, bool converge = false)
+	{
+		alpha.target(expf(-constants.common2nats * avedel / (samples + constants.eps)), converge);
+	}
+
+	//Set the peak rate of change of the delays in samples/sample, 0 is stationary
+	void setRate(float samples, bool converge = false)
+	{
+		dph.target(0.5f * samples / (maxdel - mindel), converge);
+	}
+
+	void clear()
+	{
+		ph = 0.0f;
+		dph.converge();
+		alpha.converge();
+		for (int m = 0; m < M; m++) {
+			buffer[m].clear();
+		}
+	}
+	//no step(), aggressively block optimized
+	void stepBlock(const float* x, float* y, int len)
+	{
+		vcopy(x, dryscr.ptr(), len); //copy dry
+
+		dph.slew(len); //phase stepping
+		ph += (len * dph.get()); //step a block at a time, rates should be quite low
+		ph -= floorf(ph);
+
+		float temp = 0.0f; //get current delays and each voice's raw feedback
+		for (int m = 0; m < M; ++m) {
+			temp = ph + ph0[m];
+			temp = 2.0f * (temp - floorf(temp)) - 1.0f; //quadratic shape & weighting
+			temp = deldiff * temp * temp + (float)maxdel; //fractional delay target
+
+			buffer[m].get(xscr[m], len, (int)roundf(temp)); //feedback block
+		}
+
+		if (alpha.check()) { //apply feedback gain
+			alpha.slewBlock(alphascr.ptr(), len);
+			for (int m = 0; m < M; ++m) {
+				vmult(xscr[m].ptr(), alphascr.ptr(), xscr[m].ptr(), len);
+			}
+		}
+		else {
+			for (int m = 0; m < M; ++m) {
+				vmult(xscr[m].ptr(), alpha.get(), xscr[m].ptr(), len);
+			}
+		}
+		
+		vset(y, 0.0f, len); //accumulate output (wet only)
+		for (int m = 0; m < M; ++m) {
+			vadd(y, xscr[m].ptr(), y, len);
+		}
+
+		vmult(dryscr.ptr(), 1.0f / sqrtf((float)M), dryscr.ptr(), len); //mix back to buffer
+		vmultaccum(y, 2.0f / M, dryscr.ptr(), len); //T = 2.0f / M
+		for (int m = 0; m < M; ++m) {
+			vsub(dryscr.ptr(), xscr[m].ptr(), xscr[m].ptr(), len); //R = T - 1
+			buffer[m].put(xscr[m], len);
+		}
+	}
+
+protected:
+	const int rate = 1; //nominal sampling rate (1, 2, or 4 re 48k)
+	const int maxlen = 128; //maximum block size
+
+	const int N = 4096; //buffer length
+	const int r = 12;
+	const int maxdel = 3968;
+	const int mindel = 512;
+	const float avedel = 2816.0f; //= mindel + (2.0f/3.0f)*(maxdel-mindel)
+	const float deldiff = 3456.0f; //= maxdel - mindel
+
+	fvec ph0; //bias seed phases on [0, 1)
+	float ph = 0.0f; //current phase state on [0, 1)
+	slewed<float> dph = 0.0f; //phase step per sample due to rate control
+
+	float dalpha = 0.0f; //block-based fractional delay 2-pole smoothing coefficient
+	fvec delmem1, delmem2; //state for phase 2-pole smoother
+
+	slewed<float> alpha; //alpha parameter for decay application
+	pow2buffer buffer[M]; //N by M circular buffer
+
+	fvec dryscr; //dry scratch vector
+	fvec alphascr; //slewed alpha scratch vector
+	fvec xscr[M]; //maxlen by M input scratch vector
+};
+
 //==================================================
 
 //Core phaser processing
@@ -870,10 +1041,11 @@ public:
 			update();
 		}
 	}
-	void clear()
+	void clear(float setAlpha = 0.0f)
 	{
 		vset(mem, 0.0f, order);
 		fbmem = 0.0f;
+		amem = setAlpha;
 	}
 	float step(float x, float alpha)
 	{
@@ -887,7 +1059,8 @@ public:
 
 		const float acur = amem;
 		float xtemp[order];
-		float ytemp = x + fb * fbmem; //feedback
+		float ytemp = x - fb * fbmem; //feedback
+		x = gdry * x + gwet * fbmem; //output
 		for (int n = 0; n < order; ++n) {
 			xtemp[n] = ytemp + acur * mem[n];
 			ytemp = -acur * xtemp[n] + mem[n];
@@ -896,7 +1069,7 @@ public:
 			mem[n] = xtemp[n];
 		}
 		fbmem = ytemp;
-		return (gdry * x - depth * fbmem);
+		return x;
 	}
 
 	void stepBlock(const float* x, float alpha, float* y, int len)
@@ -915,7 +1088,8 @@ public:
 			const float acur = amem;
 			const float* memcur = mem;
 
-			ytemp = x[i] + fb * fbmem; //feedback
+			ytemp = x[i] - fb * fbmem; //feedback
+			y[i] = gdry * x[i] + gwet * fbmem; //output
 			for (int n = 0; n < order; ++n) {
 				xtemp[n] = ytemp + acur * memcur[n];
 				ytemp = -acur * xtemp[n] + memcur[n];
@@ -924,7 +1098,6 @@ public:
 				mem[n] = xtemp[n];
 			}
 			fbmem = ytemp;
-			y[i] = gdry * x[i] - depth * fbmem;
 		}
 	}
 
@@ -935,13 +1108,16 @@ private:
 	slewed<float> fb; //feedback gain
 	slewed<float> depth; //depth gain
 	float gdry = 0.0f; //dry gain
+	float gwet = 0.0f; //wet gain
 	float amem = 0.0f; //alpha smoothing memory
 
 	float mem[order]; //filter DF-II memory
 	float fbmem = 0.0f; //feedback memory
 
 	void update() { //updates gdry from fb and depth
-		gdry = (1.0f + (depth / (1.0f - fb)));
+		gwet = -depth; //(fb * fb - 1.0f);
+		gdry = (1.0f - depth) - gwet / (1.0f + fb); //-gwet / (1.0f - fb);
+		//gdry = (1.0f + (depth / (1.0f - fb)));
 	}
 };
 
@@ -972,31 +1148,6 @@ private:
 
 	void update(); //updates gdry from fb and depth
 };
-
-/*
-//Core ensemble chorus/doubler voice processor, passed a shared
-//circbuffer for memory savings in multivoice systems
-class doubler
-{
-public:
-	doubler(const circbuffer& buffref, int maxbsize = 128);
-	~doubler();
-
-	void setMaxDelay(int newMaxDelay);
-	void setMaxStep(float newMaxSampleStep);
-	void setMaxGain(float newMaxGainMult);
-	void setPeriodRange(int mewMinPeriod, int newMaxPeriod);
-
-	void clear(int setDelay = 0, float setShift = 1.0f, float setGainMult = 1.0f);
-	void stepBlock(float* y, int len);
-
-private:
-	const circbuffer& buff; //core shared memory buffer
-
-	fastcircint l; //current index in the buffer
-	
-};
-*/
 
 //==================================================
 

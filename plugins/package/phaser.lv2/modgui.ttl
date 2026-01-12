@@ -32,8 +32,8 @@
             lv2:name "Rate" ;
         ] , [
             lv2:index 4 ;
-            lv2:symbol "tone" ;
-            lv2:name "Tone" ;
+            lv2:symbol "rolloff" ;
+            lv2:name "Rolloff" ;
         ] , [
             lv2:index 5 ;
             lv2:symbol "level" ;
