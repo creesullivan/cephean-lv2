@@ -241,11 +241,49 @@ void vsqrt(const float* x, float* y, int len)
 		y[i] = sqrtf(x[i]);
 	}
 }
+void vcos(const float* x, float* y, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		y[i] = cosf(x[i]);
+	}
+}
+void vsin(const float* x, float* y, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		y[i] = sinf(x[i]);
+	}
+}
 
 void vexpi(const float* ph, complex<float>* y, int len)
 {
 	for (int i = 0; i < len; ++i) {
 		y[i] = expi(ph[i]);
+	}
+}
+void vunwrap(const float* x, float* y, int len)
+{
+	if (len == 1) {
+		y[0] = x[0];
+	}
+	else if (len > 1) {
+		float dtemp = 0.0f;
+		y[0] = x[0];
+		for (int i = 1; i < len; ++i) {
+			dtemp = x[i] - x[i - 1];
+			if (dtemp > constants.pi) {
+				dtemp -= 2.0f * constants.pi;
+			}
+			else if (dtemp < -constants.pi) {
+				dtemp += 2.0f * constants.pi;
+			}
+			y[i] = y[i - 1] + dtemp;
+		}
+	}
+}
+void varg(const complex<float>* x, float* ph, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		ph[i] = arg(x[i]);
 	}
 }
 
@@ -587,7 +625,6 @@ float multirange::map(float x) const
 	}
 	return r[r.size() - 1].map(x);
 }
-
 
 } //namespace cephean
 

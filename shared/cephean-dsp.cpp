@@ -10,6 +10,17 @@ namespace cephean
 
 //==================================================
 
+//Fills the input buffer with random float values between 0 and 1
+//from calls to randf().
+void vrandf(float* x, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		x[i] = randf();
+	}
+}
+
+//==================================================
+
 //Periodic triangle wave from -1 to +1 as a function of phase x
 //where triwave(0) = triwave(2*pi) = 0.0f ala a sine wave.
 float triwave(float x)
@@ -391,6 +402,126 @@ void fcfvec::setwrap(float wrap, fastcircfloat::setwrapmode mode)
 	for (int i = 0; i < N; ++i) {
 		p[i].setwrap(wrap, mode);
 	}
+}
+
+//==================================================
+
+scale::scale()
+{
+	set(fundamental::C, mode::CHROMATIC, 440.0f); //initialize
+}
+scale::~scale() {}
+
+void scale::set(fundamental setFund, mode setMode, float setA4hz)
+{
+	f = setFund;
+	m = setMode;
+	A4 = setA4hz;
+
+	fastcircint degree(12, (int)f);
+	switch (m)
+	{
+	case mode::MAJOR:
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = false;
+		valid[degree++] = true; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		break;
+	case mode::MINOR:
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = false;
+		break;
+	case mode::HARMONIC:
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = false; valid[degree++] = true;
+		break;
+	case mode::MELODIC:
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = true; valid[degree++] = true; valid[degree++] = true; valid[degree++] = true;
+		break;
+	case mode::DORIAN:
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = true; valid[degree++] = false;
+		break;
+	case mode::PHRYGIAN:
+		valid[degree++] = true; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = false;
+		break;
+	case mode::LYDIAN:
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = false;
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		break;
+	case mode::MIXOLYDIAN:
+		valid[degree++] = true; valid[degree++] = false; valid[degree++] = true; valid[degree++] = false;
+		valid[degree++] = true; valid[degree++] = true; valid[degree++] = false; valid[degree++] = true;
+		valid[degree++] = false; valid[degree++] = true; valid[degree++] = true; valid[degree++] = false;
+		break;
+	default: //CHROMATIC
+		valid[degree++] = true; valid[degree++] = true; valid[degree++] = true; valid[degree++] = true;
+		valid[degree++] = true; valid[degree++] = true; valid[degree++] = true; valid[degree++] = true;
+		valid[degree++] = true; valid[degree++] = true; valid[degree++] = true; valid[degree++] = true;
+	}
+}
+
+//Converts to fractional MIDI note number via the A4 tuning
+float scale::toNoteNum(float hz) const
+{
+	return logf(hz / A4) * (12.0f / constants.two2nats) + 81.0f; //81 is midi NN of A4
+}
+
+//Converts to fractional note name representation on [0, 12), also returning octave index oct
+float scale::toNoteName(float hz, int& oct) const
+{
+	hz = toNoteNum(hz);
+	oct = (int)floorf(hz / 12.0f);
+	hz = hz - oct * 12.0f; //positive remainder
+	return hz;
+}
+
+//Converts to Hz from MIDI note number via the A4 tuning
+float scale::toHz(int noteNum) const
+{
+	return expf((noteNum - 81.0f) * (constants.two2nats / 12.0f)) * A4;
+}
+
+//Returns the frequencies in Hz of valid scale degrees below and above the requested frequency
+void scale::snap(float hz, float& hzBelow, float& hzAbove) const
+{
+	int oct0 = 0;
+	hz = toNoteName(hz, oct0);
+
+	//search the scale for the valid degree below our current note
+	int oct = oct0;
+	int note = (int)floorf(hz);
+	for (int i = 0; i < 12; ++i) {
+		if (valid[note]) {
+			break;
+		}
+		if (--note < 0) { //continue the descent to find a valid note
+			--oct;
+			note += 12;
+		}
+	}
+	hzBelow = toHz(note + 12 * oct);
+
+	//search the scale for the valid degree above our current note
+	oct = oct0;
+	note = (int)floorf(hz);
+	for (int i = 0; i < 12; ++i) {
+		if (++note >= 12) { //increment first to check above and ascend
+			++oct;
+			note -= 12;
+		}
+		if (valid[note]) {
+			break;
+		}
+	}
+	hzAbove = toHz(note + 12 * oct);
 }
 
 
@@ -1160,6 +1291,69 @@ float saturator::step(float x)
 	return 1.0f / (1.0f + fabsf(x));
 }
 
+softclip::softclip(int slew) : knee(slew)
+{
+	setKneeWidth(0.0f, true); //init
+}
+softclip::~softclip() {}
+
+//knee width must be on the range [0, 2]
+void softclip::setKneeWidth(float wid, bool converge)
+{
+	knee.target(wid, converge);
+	if (converge) {
+		update();
+	}
+}
+
+float softclip::step(float x)
+{
+	const float g = stepGain(x);
+	return g * x;
+}
+float softclip::stepGain(float x)
+{
+	if (knee.slew()) {
+		update();
+	}
+
+	x = fabsf(x);
+	if (x > B) {
+		x = 1.0f / x;
+	}
+	else if (x > T) {
+		const float z = x - B;
+		x = (A * z * z + 1.0f) / x;
+	}
+	else { //x <= T
+		x = 1.0f;
+	}
+	return x;
+}
+
+void softclip::stepBlock(const float* x, float* y, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		y[i] = step(x[i]); //eh... do I really need to optimize this?
+	}
+}
+void softclip::stepGainBlock(const float* x, float* g, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		g[i] = stepGain(x[i]); //eh... do I really need to optimize this?
+	}
+}
+
+void softclip::update()
+{
+	const float k = knee;
+	A = -0.5f / k;
+	B = 1.0f + 0.5f * k;
+	T = 1.0f - 0.5f * k;
+}
+
+//==================================================
+
 //stationary points of undriven SOLE
 const float fastratio::x0 = 0.01f; 
 const float fastratio::x1 = 0.1f;
@@ -1506,6 +1700,85 @@ void simsaturator::update()
 	drive = sqrtf(drive);
 	gTA *= (drive + 1.0f) / drive;
 	bA = 1.0f / drive;
+}
+
+//==================================================
+
+	/* Algorithm for reference:
+	s = gate*x/sqrt(gate*gate + eps + x*x);
+	y = x - s;
+
+	gy = y*gain - bias;
+	z = (gy/sqrt(1 - 0.5*gy + gy*gy)) + (bias/sqrt(1 + 0.5*bias + bias*bias));
+	*/
+
+	//Imperfect waveshaper function with controls for gain, bias, and
+//built-in low level sample-based gating for clarity.
+transistor::transistor(int slew) : prop(3, slew)
+{
+	set(1.0f, 0.0f, 0.0f, true);
+}
+transistor::~transistor() {}
+
+//all parameters set as linear constants
+void transistor::set(float newDrive, float newBias, float newGate, bool converge)
+{
+	float* pprop = prop.target();
+	pprop[0] = newDrive;
+	pprop[1] = newBias;
+	pprop[2] = newGate;
+	if (converge) {
+		prop.converge();
+		update();
+	}
+}
+void transistor::stepBlock(const float* x, float* y, int len)
+{
+	if (prop.swap()) {
+		update();
+	}
+	if (prop.check()) { //if cross-fading
+		const coefs cA = coefA;
+		const coefs cB = coefB;
+		float tempA = 0.0f;
+		float tempB = 0.0f;
+		for (int i = 0; i < len; ++i) {
+			tempA = cA.gateNum * x[i] / sqrtf(cA.gateDen + x[i] * x[i]);
+			tempA = x[i] - tempA; //suppression gating term
+			tempA = tempA * cA.gain - cA.bias;
+			tempA = tempA / sqrtf(1.0f - asym * tempA + tempA * tempA) + cA.unbias; //imperfect saturator
+
+			tempB = cB.gateNum * x[i] / sqrtf(cB.gateDen + x[i] * x[i]);
+			tempB = x[i] - tempB; //suppression gating term
+			tempB = tempB * cB.gain - cB.bias;
+			tempB = tempB / sqrtf(1.0f - asym * tempB + tempB * tempB) + cB.unbias; //imperfect saturator
+
+			prop.fade();
+			y[i] = tempA * prop.gain() + tempB * (1.0f - prop.gain()); //blend
+		}
+	}
+	else { //not cross-fading
+		const coefs cA = coefA;
+		float temp = 0.0f;
+		for (int i = 0; i < len; ++i) {
+			temp = cA.gateNum * x[i] / sqrtf(cA.gateDen + x[i] * x[i]);
+			temp = x[i] - temp; //suppression gating term
+			temp = temp * cA.gain - cA.bias;
+			y[i] = temp / sqrtf(1.0f - asym * temp + temp * temp) + cA.unbias; //imperfect saturator
+		}
+	}
+}
+void transistor::update()
+{
+	//copy out old values into new
+	coefB = coefA;
+
+	//design new coefficients from parameters
+	coefA.gateNum = prop.current()[2];
+	coefA.gateDen = coefA.gateNum * coefA.gateNum + constants.eps;
+	coefA.gain = prop.current()[0];
+	coefA.bias = prop.current()[1];
+	coefA.unbias = coefA.bias / sqrtf(1.0f + asym * coefA.bias + coefA.bias * coefA.bias);
 }
 
 //==================================================
@@ -2104,6 +2377,52 @@ void flangercore::update()
 
 //==================================================
 
+timedither::timedither(int maxbsize) : xbuff(maxbsize + 1), ybuff(maxbsize + 1), gbuff(maxbsize + 1), g(maxbsize)
+{
+	clear();
+}
+timedither::~timedither() {}
+
+void timedither::clear()
+{
+	xbuff.clear();
+	ybuff.clear();
+	gbuff.clear();
+}
+void timedither::apply(const float* x, float* y, int len)
+{
+	//generate random interpolation gains
+	vrandf(g, len);
+	vmult(g.ptr(), gsafe, g.ptr(), len);
+	
+	//data shift
+	xbuff.put(x, len);
+	gbuff.put(g, len);
+
+	//linear interpolation
+	vmult(xbuff.get(len, 0), g.ptr(), y, len);
+	vsub(1.0f, g.ptr(), g.ptr(), len); //1-g
+	vmultaccum(xbuff.get(len, 1), g.ptr(), y, len);
+}
+void timedither::invert(const float* y, float* x, int len)
+{
+	//compute un-interpolation gains
+	const float* glast = gbuff.get(len, 1);
+	for (int i = 0; i < len; ++i) {
+		g[i] /= (g[i] + glast[i]); //g enters as 1-g from apply() function
+	}
+
+	//data shift
+	ybuff.put(y, len);
+
+	//linear interpolation
+	vmult(ybuff.get(len, 0), g.ptr(), x, len);
+	vsub(1.0f, g.ptr(), g.ptr(), len); //1-g
+	vmultaccum(ybuff.get(len, 1), g.ptr(), x, len);
+}
+
+//==================================================
+
 corrbuffer::corrbuffer(int len, int chunk, int dsr, int maxbsize) :
 	Nu(len), Nd(len/dsr), Md(chunk/dsr), DSR(dsr), maxlen(maxbsize),
 	Rlen(Nd - Md + 1), K(getKForNpts(Nd)),
@@ -2245,7 +2564,7 @@ float corrbuffer::firstpeak(const float* R, float& delay, float allow, int minde
 				isdone = true; //and escape
 			}
 		}
-		if (++i > idelay) {			//if we somehow moved past the true peak value
+		if (i++ > idelay) {			//if we somehow moved past the true peak value
 			delay = (float)idelay;	//the only way is that the correlation sequence is invalid
 			isdone = true;			//so just assign the edge value and escape, Rpeak should hold 0
 		}
@@ -2507,6 +2826,241 @@ void upshift::stepBlock(const float* x, float* y, int len, const float* R, float
 	else { //no active blend, free run one voice
 		buff.getNN(y, len, del1, ddel);
 		del1 += (ddel * len);
+	}
+}
+
+varshift::varshift(float minSampleStep, float maxSampleStep, int blendLength, bool antialiases, const corrbuffer& Robj) :
+	Nu(Robj.Nu), DSR(Robj.DSR), maxlen(Robj.maxlen), Rlen(Robj.Rlen),
+	ddel1(max(1.0f - minSampleStep, 0.0f)), ddel2(min(1.0f - maxSampleStep, 0.0f)),
+	useAntiAliasing(antialiases),
+	blendlen((int)ceilf(((float)blendLength)/maxlen)*maxlen), //only check once per block, so this is the effective duration
+	mindeld((int)ceilf(-2.0f * blendlen * ddel2 / DSR) + 1), mindel(mindeld * DSR), //ddel2 <= 0
+	maxdeld(min((int)floorf(Nu - 2.0f * blendlen * ddel1 / DSR) - 1, Rlen - 1 - mindeld)), maxdel(maxdeld * DSR),
+	buff(maxlen, (int)ceilf(log2f((float)Nu))),
+	blend(blendLength - 1, false), //-1 for safety, to GUARANTEE we blend on time
+	prelpf(maxlen), postlpf(maxlen),
+	scr(maxlen), delscr(maxlen)
+{
+}
+varshift::~varshift() {}
+
+//Sets the absolute correlation threshold that flags a transient and snaps to front
+void varshift::setSnapThresh(float thresh)
+{
+	Tsnap = thresh;
+}
+//Sets the relative correlation threshold that flags a period to blend across
+void varshift::setBlendThresh(float thresh)
+{
+	Tblend = thresh;
+}
+//Minimum sample shift corresponding roughly to highest pitch period
+void varshift::setMinPeriod(int samples)
+{
+	minperd = max(samples / DSR, 1); //floor to downsampling rate
+	minper = minperd * DSR;
+}
+
+void varshift::clear()
+{
+	buff.clear();
+	prelpf.clear();
+	postlpf.clear();
+	blend.converge();
+	del1 = (float)mindel;
+	del2 = 0.0f;
+}
+
+void varshift::stepBlock(const float* x, const float* dsamp, float* y, int len, const float* R, float Rmax)
+{
+	if (useAntiAliasing) {
+		//update antialiasing filters
+		float maxUpshift = vfindmax(dsamp, len);
+		float maxDownshift = vfindmin(dsamp, len);
+		if (maxUpshift > 1.0f) {
+			prelpf[0].setCoefs(filt::lowpass2(0.9f / maxUpshift, 0.707f));
+			prelpf[1].setCoefs(prelpf[0].getCoefs());
+			wasUpshifting = true;
+		}
+		else {
+			if (wasUpshifting) {
+				prelpf[0].setCoefs(filt::lowpass2(0.9f, 0.707f));
+				prelpf[1].setCoefs(prelpf[0].getCoefs());
+			} //otherwise latch to save processing power
+			wasUpshifting = false;
+		}
+		if (maxDownshift < 1.0f) {
+			postlpf[0].setCoefs(filt::lowpass2(0.9f * maxDownshift, 0.707f));
+			postlpf[1].setCoefs(postlpf[0].getCoefs());
+			wasDownshifting = true;
+		}
+		else {
+			if (wasDownshifting) {
+				postlpf[0].setCoefs(filt::lowpass2(0.9f, 0.707f));
+				postlpf[1].setCoefs(postlpf[0].getCoefs());
+			} //otherwise latch to save processing power
+			wasDownshifting = false;
+		}
+		prelpf.stepBlock(x, y, len); //pre-filter
+	}
+	else {
+		vcopy(x, y, len);
+	}
+
+	//put new data to the buffer
+	buff.put(y, len);
+
+	bool newblend = false; //flags a new blend
+	float del1bs = 0.0f; //del1 assignment on new blend
+	float del2bs = 0.0f; //del2 assignment on new blend
+
+	if (!(blend.check())) { //if no active blend, check to see if we need to start one
+		if (Rmax < Tsnap) { //transient detected,
+			del1bs = (float)mindel; //snap to front
+			del2bs = del1;
+			newblend = true;
+		}
+		else {
+			if (del1 <= (float)mindel) { //nearing the front edge of the buffer,
+				int curmindeld = max((int)ceilf(mindeld - del1 / DSR), minperd); 
+				int curmaxdeld = min((int)floorf(maxdeld - del1 / DSR), Rlen - 1);
+				bool isdone = false;
+				int i = curmindeld; // search low to high R to minimize latency
+				float curbestdeld = (float)curmindeld;
+				float curbestR = 0.0f;
+				while (!isdone) {
+					if (R[i] >= (Rmax * Tblend)) { //adequate blend correlation
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign
+							isdone = true; //and escape
+						}
+						else if (R[i] > curbestR) { //not local maxima, but still keep track of best found
+							curbestdeld = (float)i; //assign
+							curbestR = R[i]; //but don't escape, wait for something better
+						}
+					}
+					else if (R[i] > curbestR) { //inadequate correlation, but still keep track of best found
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign accurately
+							curbestR = R[i]; //but don't escape, wait for something better
+						}
+						else { //not local maxima
+							curbestdeld = (float)i; //assign directly
+							curbestR = R[i];
+						}
+					}
+					if (++i > curmaxdeld) {
+						isdone = true; //escape with our best found R value
+					}
+				}
+				del1bs = del1 + curbestdeld * DSR; //assign the best blend
+				del2bs = del1;
+				newblend = true;
+			}
+			else if (del1 >= (float)maxdel) { //nearing the back edge of the buffer
+				int curmindeld = max((int)ceilf(del1 / DSR - maxdeld), minperd);
+				int curmaxdeld = min((int)floorf(del1 / DSR - mindeld), Rlen - 1);
+				bool isdone = false;
+				int i = curmaxdeld; // search high to low R to minimize latency
+				float curbestdeld = (float)curmaxdeld;
+				float curbestR = 0.0f;
+				while (!isdone) {
+					if (R[i] >= (Rmax * Tblend)) { //adequate blend correlation
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign
+							isdone = true; //and escape
+						}
+						else if (R[i] > curbestR) { //not local maxima, but still keep track of best found
+							curbestdeld = (float)i; //assign
+							curbestR = R[i]; //but don't escape, wait for something better
+						}
+					}
+					else if (R[i] > curbestR) { //inadequate correlation, but still keep track of best found
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign accurately
+							curbestR = R[i]; //but don't escape, wait for something better
+						}
+						else { //not local maxima
+							curbestdeld = (float)i; //assign directly
+							curbestR = R[i];
+						}
+					}
+					if (--i < curmindeld) {
+						isdone = true; //escape with our best found R value
+					}
+				}
+				del1bs = del1 - curbestdeld * DSR; //assign the best blend
+				del2bs = del1;
+				newblend = true;
+			}
+			else { //if not near the end of the buffer, check for any valid forward blending to reduce latency
+				int curmindeld = max((int)ceilf(del1 / DSR - maxdeld), minperd);
+				int curmaxdeld = min((int)floorf(del1 / DSR - mindeld), Rlen - 1);
+				newblend = false;
+				bool isdone = (curmaxdeld < curmindeld); //then no valid range to check, just escape
+				int i = curmaxdeld; // search high to low R to minimize latency
+				float curbestdeld = (float)curmaxdeld;
+				float curbestR = 0.0f;
+				while (!isdone) {
+					if (R[i] >= (Rmax * Tblend)) { //adequate blend correlation
+						if ((R[i] > R[i - 1]) && (R[i] > R[i + 1])) { //local maxima
+							curbestdeld = (float)i + parabsolve(R[i - 1], R[i], R[i + 1]); //assign
+							newblend = true;
+							isdone = true; //and escape
+						}
+						else if (R[i] > curbestR) { //not local maxima, but still keep track of best found
+							curbestdeld = (float)i; //assign
+							newblend = true; //this run is guaranteed to end in success
+							curbestR = R[i]; //but don't escape, wait for something better
+						}
+					}
+					if (--i < curmindeld) {
+						isdone = true; //escape with our best found R value, likely in failure
+					}
+				}
+				if (newblend) {
+					del1bs = del1 - curbestdeld * DSR; //assign the best blend
+					del2bs = del1;
+				} //if no valid forward blending, keep free running
+			}
+		}
+	}
+
+	if (newblend) { //kick off new blend
+		blend.target(!(blend.current()));
+		blend.swap();
+		del1 = del1bs;
+		del2 = del2bs;
+	}
+
+	if (blend.check()) { //if already blending, use two voices and manage gains
+		for (int i = 0; i < len; ++i) {
+			delscr[i] = del1;
+			del1 += (1.0f - dsamp[i]);
+		}
+		buff.getLinear(y, len, delscr); //primary voice
+		for (int i = 0; i < len; ++i) {
+			delscr[i] = del2;
+			del2 += (1.0f - dsamp[i]);
+		}
+		buff.getLinear(scr, len, delscr); //secondary voice
+
+		for (int n = 0; n < len; ++n) { //apply blending gains, forming output
+			blend.fade();
+			y[n] *= blend.gain();
+			y[n] += scr[n] * (1.0f - blend.gain());
+		}
+	}
+	else { //no active blend, free run one voice
+		for (int i = 0; i < len; ++i) {
+			delscr[i] = del1;
+			del1 += (1.0f - dsamp[i]);
+		}
+		buff.getLinear(y, len, delscr);
+	}
+
+	if (useAntiAliasing) {
+		postlpf.stepBlock(y, y, len); //post-filter
 	}
 }
 

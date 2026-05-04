@@ -12,6 +12,33 @@ namespace cephean
 
 //==================================================
 
+//Pretty much the simplest digital filter:
+//	y = alpha*y + (1-alpha)*x
+//Includes several design equations for different tasks. Smooths
+//alpha automatically.
+class onepolelpf : public monoalg
+{
+public:
+	onepolelpf(int slew = 1);
+	~onepolelpf();
+
+	void set(float setAlpha, bool converge = false);
+	void setTimeSmoother(float setN, bool converge = false);
+	void setLowpass(float setf, bool converge = false);
+	float getAlpha() const;
+
+	void clear(float value = 0.0f);
+
+	float step(float x) override;
+	void stepBlock(const float* x, float* y, int len) override;
+
+private:
+	slewed<float> alpha;
+	float mem = 0.0f;
+};
+
+//==================================================
+
 //First order filter class, defining the fof::coefs structure
 //and permitting mono, stereo, or multichannel filtering with
 //fixed or time varying slewed filters.
@@ -114,6 +141,10 @@ fof::coefs highshelf1(float f, float g);
 //and bounds minf, maxf for stability
 fof::coefs highshelf1(float f, float g, float minf, float maxf);
 
+//First order mixed shelf with crossover frequency f and balance gain multiplier g,
+//applied to high freqs and inverted to low freqs (1/g)
+fof::coefs balance1(float f, float g);
+
 //====================================================
 
 //First order Pade delay approximation for del in samples
@@ -202,6 +233,9 @@ namespace filt
 	//Flips the numerator coefficients of the provided filter, switching
 	//min phase <-> max phase, usually for phase aligned double filtering
 	sof::coefs mp2mp(const sof::coefs& coef);
+
+	//Injects linear gain multiplier g into the numerator coefficients
+	sof::coefs regain(const sof::coefs& coef, float g);
 
 	//====================================================
 
@@ -595,6 +629,14 @@ const sofcasc<2>::coefs& bandpass4(sofcasc<2>::coefs& coef, float f, float oct);
 //8th order (4 section) antialiasing lowpass filter with a bandwidth
 //of 1/DSR the Nyquist rate
 const sofcasc<4>::coefs& antialias8(sofcasc<4>::coefs& coef, int DSR);
+
+//====================================================
+
+//Mixed order (2 section and 4 section) Hilbert transform filter with an
+//approximate useful bandwidth from [100, 20000] Hz nominal. Make sure to
+//highpass with at least a 2nd order filter below 100 Hz or more to mitigate
+//artifacts
+void hilbert7(sofcasc<2>::coefs& coef0, sofcasc<4>::coefs& coef90);
 
 }
 

@@ -1,0 +1,38 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/reguitar>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-reguitar.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-reguitar.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-reguitar.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-reguitar.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "REGUITAR" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "freq1" ;
+            lv2:name "Freq-1" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "res1" ;
+            lv2:name "Res-1" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "gain" ;
+            lv2:name "Gain" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "freq2" ;
+            lv2:name "Freq-2" ;
+        ] , [
+            lv2:index 4 ;
+            lv2:symbol "res2" ;
+            lv2:name "Res-2" ;
+        ] ;
+    ] .

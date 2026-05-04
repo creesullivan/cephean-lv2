@@ -1,0 +1,42 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/wahwah>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-wah-wah.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-wah-wah.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-wah-wah.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-wah-wah.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "WAH WAH" ;
+        modgui:model "boxy" ;
+        modgui:panel "6-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "freq1" ;
+            lv2:name "Freq1" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "freq2" ;
+            lv2:name "Freq2" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "rolloff" ;
+            lv2:name "Rolloff" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "res1" ;
+            lv2:name "Res1" ;
+        ] , [
+            lv2:index 4 ;
+            lv2:symbol "res2" ;
+            lv2:name "Res2" ;
+        ] , [
+            lv2:index 5 ;
+            lv2:symbol "level" ;
+            lv2:name "Level" ;
+        ] ;
+    ] .

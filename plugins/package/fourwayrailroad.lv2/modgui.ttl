@@ -1,0 +1,22 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/fourwayrailroad>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-four-way-railroad.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-four-way-railroad.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-four-way-railroad.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-four-way-railroad.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "4-WAY RAILROAD" ;
+        modgui:model "boxy" ;
+        modgui:panel "1-knob" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "position" ;
+            lv2:name "Position" ;
+        ] ;
+    ] .

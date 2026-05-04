@@ -10,6 +10,57 @@ namespace cephean
 
 //==================================================
 
+onepolelpf::onepolelpf(int slew) : alpha(slew)
+{
+	clear();
+}
+onepolelpf::~onepolelpf() {}
+
+void onepolelpf::set(float setAlpha, bool converge)
+{
+	alpha.target(setAlpha, converge);
+}
+void onepolelpf::setTimeSmoother(float N, bool converge)
+{
+	alpha.target(expf(-1.0f / N), converge);
+}
+void onepolelpf::setLowpass(float f, bool converge)
+{
+	alpha.target(expf(-2.0f * constants.pi * f), converge);
+}
+float onepolelpf::getAlpha() const
+{
+	return alpha.get();
+}
+
+void onepolelpf::clear(float value)
+{
+	mem = value;
+}
+
+float onepolelpf::step(float x)
+{
+	alpha.slew();
+	mem = mem * alpha.get() + (1.0f - alpha.get()) * x;
+	return mem;
+}
+void onepolelpf::stepBlock(const float* x, float* y, int len)
+{
+	if (alpha.check()) {
+		monoalg::stepBlock(x, y, len);
+	}
+	else {
+		const float acur = alpha.get();
+		const float bcur = 1.0f - acur;
+		for (int i = 0; i < len; ++i) {
+			mem = mem * acur + bcur * x[i];
+			y[i] = mem;
+		}
+	}
+}
+
+//==================================================
+
 fof::fof(int slew, int maxNch, bool blockTransposed) :
 	multialg(maxNch, blockTransposed),
 	sc(3, slew), vmem(maxNch)
@@ -353,6 +404,21 @@ fof::coefs highshelf1(float f, float g, float minf, float maxf)
 	return coef;
 }
 
+//First order mixed shelf with crossover frequency f and balance gain multiplier g,
+//applied to high freqs and inverted to low freqs (1/g)
+fof::coefs balance1(float f, float g)
+{
+	fof::coefs coef;
+	f *= (constants.pi / 2.0f);
+	double sinw = (double)sin(f);
+	double cosw = (double)cos(f);
+	double a0 = g * sinw + cosw;
+	coef.b0 = (sinw + g * cosw) / a0;
+	coef.b1 = (sinw - g * cosw) / a0;
+	coef.na1 = -(g * sinw - cosw) / a0;
+	return coef;
+}
+
 //====================================================
 
 //First order Pade delay approximation for del in samples. Del
@@ -632,6 +698,12 @@ sof::coefs matchphase(const sof::coefs& coef)
 sof::coefs mp2mp(const sof::coefs& coef)
 {
 	return { coef.na1, coef.na2, coef.b2, coef.b1, coef.b0 };
+}
+
+//Injects linear gain multiplier g into the numerator coefficients
+sof::coefs regain(const sof::coefs& coef, float g)
+{
+	return { coef.na1, coef.na2, g * coef.b0, g * coef.b1, g * coef.b2 };
 }
 
 //====================================================
@@ -1174,6 +1246,25 @@ const sofcasc<4>::coefs& antialias8(sofcasc<4>::coefs& coef, int DSR)
 		warp<4>(coef, 0.5f, 1.0f / DSR);
 	}
 	return coef;
+}
+
+//====================================================
+
+//Mixed order (2 section and 4 section) Hilbert transform filter with an
+//approximate useful bandwidth from [100, 20000] Hz nominal. Make sure to
+//highpass with at least a 2nd order filter below 100 Hz or more to mitigate
+//artifacts
+void hilbert7(sofcasc<2>::coefs& coef0, sofcasc<4>::coefs& coef90)
+{
+	//3rd order 0deg path coefs
+	coef0[0] = { 1.604268681358, -0.619336042960, 0.619336042960, -1.604268681358, 1.000000000000 };
+	coef0[1] = { -0.356418777024, 0.000000000000, 0.356418777024, 1.000000000000, 0.000000000000 };
+
+	//7th order 90deg path coefs
+	coef90[0] = { 1.914645597615, -0.916466941117, -9.416128877146, 18.834079097793, -9.416128877146 };
+	coef90[1] = { 0.998029112485, 0.000000000000, 0.003923141155, 0.003923141155, 0.000000000000 };
+	coef90[2] = { 1.293891765101, -0.418538974949, -6.635787348065, 13.396221905977, -6.635787348065 };
+	coef90[3] = { -0.712837554048, -0.127034344615, -0.558096339476, 2.956064577614, -0.558096339476 };
 }
 
 }

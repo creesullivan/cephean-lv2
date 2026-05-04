@@ -142,6 +142,16 @@ template<unsigned int N> void impz(const typename sofcasc<N>::coefs& c, float* h
 
 void freqz(sof::coefs c, const float* f, complex<float>* H, int K);
 
+template<unsigned int N> void freqz(const typename sofcasc<N>::coefs& c, const float* f, complex<float>* H, int len)
+{
+	cfvec temp(len);
+	vset(H, 1.0f, len); //init to unity
+	for (int n = 0; n < N; ++n) {
+		freqz(c[n], f, temp.ptr(), len);
+		vmult(H, temp.ptr(), H, len); //multiply all stages together
+	}
+}
+
 /* Causing errors when compiling on Mod Dwarf...? I don't need it for now
 template<unsigned int N> void freqz(const typename lrcascade<N>& LRC, const float* f, complex<float>*const* H, int K)
 {

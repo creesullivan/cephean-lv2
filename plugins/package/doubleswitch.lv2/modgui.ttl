@@ -1,0 +1,26 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/doubleswitch>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-double-switch.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-double-switch.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-double-switch.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-double-switch.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "2x2 SWITCH" ;
+        modgui:model "boxy" ;
+        modgui:panel "2-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "switch1" ;
+            lv2:name "ONE" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "switch2" ;
+            lv2:name "TWO" ;
+        ] ;
+    ] .

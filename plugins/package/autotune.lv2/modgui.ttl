@@ -1,0 +1,22 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/autotune>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-autotune.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-autotune.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-autotune.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-autotune.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "AUTO TUNE" ;
+        modgui:model "boxy" ;
+        modgui:panel "1-knob" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "smooth" ;
+            lv2:name "Smooth" ;
+        ] ;
+    ] .

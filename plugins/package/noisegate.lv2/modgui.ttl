@@ -1,0 +1,26 @@
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+
+<https://github.com/creesullivan/cephean/noisegate>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-cephean-noise-gate.html> ;
+        modgui:stylesheet <modgui/stylesheet-cephean-noise-gate.css> ;
+        modgui:screenshot <modgui/screenshot-cephean-noise-gate.png> ;
+        modgui:thumbnail <modgui/thumbnail-cephean-noise-gate.png> ;
+        modgui:brand "cephean" ;
+        modgui:label "NOISE GATE" ;
+        modgui:model "boxy" ;
+        modgui:panel "2-knobs" ;
+        modgui:color "darkblue" ;
+        modgui:knob "black" ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "low" ;
+            lv2:name "Low" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "high" ;
+            lv2:name "High" ;
+        ] ;
+    ] .

@@ -23,6 +23,10 @@ inline float randf()
 	return ((float)rand()) / RAND_MAX;
 }
 
+//Fills the input buffer with random float values between 0 and 1
+//from calls to randf().
+void vrandf(float* x, int len);
+
 //==================================================
 
 //Periodic triangle wave from -1 to +1 as a function of phase x
@@ -189,6 +193,65 @@ public:
 	~fcfvec();
 
 	void setwrap(float wrap, fastcircfloat::setwrapmode mode = fastcircfloat::setwrapmode::WRAP);
+};
+
+//==================================================
+
+//Represents a musical scale with a fundamental note name, mode type,
+//and frequency tuning.
+class scale
+{
+public:
+	scale();
+	~scale();
+
+	enum class fundamental {
+		C = 0,
+		Db,
+		D,
+		Eb,
+		E,
+		F,
+		Gb,
+		G,
+		Ab,
+		A,
+		Bb,
+		B
+	};
+
+	enum class mode {
+		CHROMATIC = 0,
+		MAJOR,
+		MINOR,
+		HARMONIC,
+		MELODIC,
+		DORIAN,
+		PHRYGIAN,
+		LYDIAN,
+		MIXOLYDIAN
+	};
+
+	void set(fundamental setFund, mode setMode, float setA4hz);
+
+	//Converts to fractional MIDI note number via the A4 tuning
+	float toNoteNum(float hz) const;
+
+	//Converts to fractional note name representation on [0, 12), also returning octave index oct
+	float toNoteName(float hz, int& oct) const;
+
+	//Converts to Hz from MIDI note number via the A4 tuning
+	float toHz(int noteNum) const;
+
+	//Returns the frequencies in Hz of valid scale degrees below and above the requested frequency
+	void snap(float hz, float& hzBelow, float& hzAbove) const;
+
+private:
+	fundamental f = fundamental::C;
+	mode m = mode::CHROMATIC;
+	float A4 = 440.0f;
+
+	bool valid[12]; //defines the scale fundamental and mode, flagging valid notes from C-B
 };
 
 //==================================================
@@ -520,6 +583,34 @@ public:
 	using monoalg::stepBlock; //default
 };
 
+//Saturating waveshaper with a unity gain segment, a 
+//flat unity segment, and a quadratic transition region
+//in between with a given width
+class softclip
+{
+public:
+	softclip(int slew=1);
+	~softclip();
+
+	//knee width must be on the range (0, 2)
+	void setKneeWidth(float wid, bool converge = false);
+
+	float step(float x);
+	float stepGain(float x);
+
+	void stepBlock(const float* x, float* y, int len);
+	void stepGainBlock(const float* x, float* g, int len);
+
+private:
+	slewed<float> knee;
+	float A, B, T; //coefficients of the waveshaper: y = A*(|x|-B)*(|x|-B) + 1
+	void update(); //uses the current knee value to compute A, B, T
+
+	//y = g*(x - (1 + k/2))^2 + 1;
+	//at x = 1 - k/2, y = g*k^2 + 1 = 1 - k/2
+	//so g*k^2 = -k/2, or g = -1/(2*k)
+};
+
 //Fast ratio waveshaping nonlinearity with built-in slew.
 //This is valid over a range from roughly -40 dB to 0 dB
 //when undriven, below which it linearizes and above which
@@ -638,6 +729,44 @@ private:
 	float betaB = 1.0f; //lowpass makeup coef = 1.0f - alpha
 	float memB[8]; //memory slots for smoother
 	sof mufB; //makeup filter
+
+	void update();
+};
+
+//Imperfect waveshaper function with controls for gain, bias, and
+//built-in low level sample-based gating for clarity.
+class transistor
+{
+public:
+	/* Algorithm for reference:
+	s = gate*x/sqrt(gate*gate + eps + x*x);
+	y = x - s;
+
+	gy = y*gain - bias;
+	z = (gy/sqrt(1 - 0.5*gy + gy*gy)) + (bias/sqrt(1 + 0.5*bias + bias*bias));
+	*/
+
+	transistor(int slew = 1);
+	~transistor();
+
+	//all parameters set as linear constants
+	void set(float newDrive, float newBias, float newGate, bool converge = false);
+
+	void stepBlock(const float* x, float* y, int len);
+
+private:
+	const float asym = 0.8f; //constant of imperfectness in the waveshape
+	fadedvec<float> prop; //gate, drive, bias
+
+	struct coefs
+	{
+		float gateNum = 0.0f;
+		float gateDen = constants.eps;
+		float gain = 1.0f;
+		float bias = 0.0f;
+		float unbias = 0.0f;
+	};
+	coefs coefA, coefB; //coefficient groups A and B for fade
 
 	void update();
 };
@@ -1151,6 +1280,29 @@ private:
 
 //==================================================
 
+//Mono buffering class that translates a block of audio into
+//a time dithered version with randomized sample positions.
+//Use the invert() function to translate back to the original
+//grid with another linear interpolation operation.
+class timedither
+{
+public:
+	timedither(int maxbsize = 128);
+	~timedither();
+
+	void clear();
+	void apply(const float* x, float* y, int len);
+	void invert(const float* y, float* x, int len);
+
+private:
+	const float gsafe = 0.999f; //can't quite get to 1 sample width delta for safety reasons
+	flatbuffer xbuff, ybuff, gbuff; //stores maxbsize+1 samples for fast linear interpolation
+	fvec g; //maxbsize length state for gain application
+
+};
+
+//==================================================
+
 //Mono downsampled flat buffer that lets you compute a
 //normalized autocorrelation sequence. This is useful as
 //the core for pitch-shifting and pitch-detecting processes.
@@ -1159,6 +1311,7 @@ class corrbuffer
 public:
 	friend class downshift;
 	friend class upshift;
+	friend class varshift;
 
 	corrbuffer(int len = 2048, int chunk = 448, int dsr = 8, int maxbsize = 128);
 	~corrbuffer();
@@ -1308,6 +1461,66 @@ private:
 	float del2 = 0.0f; //fractional sample delay for secondary blending voice
 
 	fvec scr; //scratch voice memory
+};
+
+//Manages an internal circbuffer of data and performs a variable
+//pitch shift with a known sample step range. Initialize
+//with a reference to a corrbuffer object used for correlation
+//detection. The corrbuffer must be stepped manually before
+//the stepBlock() function so that its results can be shared
+//among several pitch shift objects.
+class varshift
+{
+public:
+	varshift(float minSampleStep, float maxSampleStep, int blendLength, bool antialiases, const corrbuffer& Robj);
+	~varshift();
+
+	//Sets the absolute correlation threshold that flags a transient and snaps to front
+	void setSnapThresh(float thresh);
+	//Sets the relative correlation threshold that flags a period to blend across
+	void setBlendThresh(float thresh);
+	//Minimum sample shift corresponding roughly to highest pitch period
+	void setMinPeriod(int samples);
+
+	void clear();
+
+	//dsamp holds the sample step vector, not shifting at all when dsamp[i] = 1
+	void stepBlock(const float* x, const float* dsamp, float* y, int len, const float* R, float Rmax);
+
+private:
+	const int Nu = 2048;
+	const int DSR = 8;
+	const int maxlen = 128;
+	const int Rlen = 201;
+	const float ddel1 = 0.5; //corresponds to lowest downshift
+	const float ddel2 = -1.0f; //corresponds to highest upshift
+	const bool useAntiAliasing = true; //whether or not to apply variable antialiasing filters
+
+	const int blendlen = 256;
+
+	const int mindeld; //mindel / dsr
+	const int mindel; //snap to front delay, earliest delay that can be blended to, and delay triggering blend to back
+	const int maxdeld; //maxdel / dsr
+	const int maxdel; //latest delay that can be blended to and delay triggering blend to front
+	
+	float Tsnap = 0.5f;
+	float Tblend = 0.9f;
+	int minperd = 12; //minper / dsr
+	int minper = 96; //minimum sample shift by a non-snapping blend
+
+	pow2buffer buff; //data buffer
+
+	sofcasc<2> prelpf; //variable 4th order BW pre-lowpass for upshifting artifact reduction
+	sofcasc<2> postlpf; //variable 4th order BW post-lowpass for downshifting artifact reduction
+	bool wasDownshifting = false; //flags to help avoid slewing LPF filters that are already unity
+	bool wasUpshifting = false;
+	
+	faded<bool> blend; //blending crossfade helper
+	float del1 = 0.0f; //fractional sample delay for primary blending voice
+	float del2 = 0.0f; //fractional sample delay for secondary blending voice
+
+	fvec scr; //scratch voice memory
+	fvec delscr; //scratch delay memory
 };
 
 }

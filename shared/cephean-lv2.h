@@ -373,10 +373,13 @@ struct Constants
 	const float e = 2.7182818284590452353602874713527f;
 	const float eps = 1e-37f; //theoretical eps is around 1e-38
 	const float p707 = 0.70710678118654752440084436210485f;
+	const float root2 = 1.4142135623730950488016887242097f;
 
-	const float db2nats = 0.11512925464970228420089957273422f; //exp(db2nats*X) = 10^(X/20)
-	const float common2nats = 2.3025850929940456840179914546844f; //exp(common2nats*X) = 10^X
-	const float two2nats = 0.69314718055994530941723212145818f; //exp(two2nats*X) = 2^X
+	const float db2nats = 0.11512925464970228420089957273422f; //exp(db2nats*X) = 10^(X/20), ln(X)/db2nats = 20*log10(X)
+	const float common2nats = 2.3025850929940456840179914546844f; //exp(common2nats*X) = 10^X, ln(X)/common2nats = log10(X)
+	const float two2nats = 0.69314718055994530941723212145818f; //exp(two2nats*X) = 2^X, ln(X)/two2nats = log2(X)
+
+	const int A4nn = 81; //midi note number for A4
 };
 //Collection of mathematical constants
 extern const Constants constants;
@@ -599,6 +602,14 @@ template<class xtype, class ytype> void vincspace(xtype* x, ytype val0, ytype dv
 	}
 }
 
+template<class xtype, class ytype> void vlinspace(xtype* x, ytype val1, ytype val2, int len)
+{
+	val2 = (val2 - val1) / len; //=dval
+	for (int i = 0; i < len; ++i) {
+		x[i] = val1 + i * val2;
+	}
+}
+
 template<class xtype, class ytype> void vcopy(const xtype* x, ytype* y, int len)
 {
 	for (int i = 0; i < len; ++i) {
@@ -681,6 +692,7 @@ template<class ptype> void vabs(const complex<ptype>* x, ptype* y, int len)
 		y[i] = abs(x[i]);
 	}
 }
+
 
 template<class ptype> void vpow(const ptype* x, ptype* y, int len)
 {
@@ -916,14 +928,29 @@ template<class ptype> void vmultaccum(const ptype* x1, const ptype* x2, ptype* y
 
 //==================================================
 
+template<class ptype> void vintegrate(const ptype* x, ptype* y, float bias, int len)
+{
+	for (int i = 0; i < len; ++i) {
+		bias += x[i];
+		y[i] = bias;
+	}
+}
+
+//==================================================
+
 void vmagdB(const float* x, float* y, int len);
 void vpowdB(const float* x, float* y, int len);
 
 void vlog(const float* x, float* y, int len);
 void vexp(const float* x, float* y, int len);
 void vsqrt(const float* x, float* y, int len);
+void vcos(const float* x, float* y, int len);
+void vsin(const float* x, float* y, int len);
 
 void vexpi(const float* ph, complex<float>* y, int len);
+//x == y is UNSAFE, only valid for x entering wrapped to +-pi
+void vunwrap(const float* x, float* y, int len);
+void varg(const complex<float>* x, float* ph, int len);
 
 //==================================================
 
@@ -1669,6 +1696,5 @@ private:
 	vec<ptype> nextval; //next (on deck) value
 	bool hasNextVal = false; //flags when nextval may be different from curval
 };
-
 
 }
